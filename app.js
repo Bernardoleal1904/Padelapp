@@ -8,18 +8,27 @@ let state = {
 
 // Data Persistence
 function loadState() {
-    const saved = localStorage.getItem('padelAppState');
-    if (saved) {
-        state = JSON.parse(saved);
-        // Ensure view is reset or valid
-        if (!state.currentView) state.currentView = 'dashboard';
-    } else {
+    try {
+        const saved = localStorage.getItem('padelAppState');
+        if (saved) {
+            state = JSON.parse(saved);
+            if (!state.currentView) state.currentView = 'dashboard';
+        } else {
+            initMockData();
+        }
+    } catch (e) {
+        console.error('Error loading state:', e);
         initMockData();
     }
 }
 
 function saveState() {
-    localStorage.setItem('padelAppState', JSON.stringify(state));
+    try {
+        localStorage.setItem('padelAppState', JSON.stringify(state));
+    } catch (e) {
+        console.error('Error saving state:', e);
+        alert('Erro ao guardar dados. O armazenamento local pode estar cheio ou desativado.');
+    }
 }
 
 // Mock Data Initialization
