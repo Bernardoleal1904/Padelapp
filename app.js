@@ -119,6 +119,12 @@ function renderDashboard(container) {
     createBtn.onclick = () => navigateTo('create-tournament');
     topBar.appendChild(createBtn);
 
+    const managePlayersBtn = document.createElement('button');
+    managePlayersBtn.textContent = 'Gerir Jogadores';
+    managePlayersBtn.className = 'secondary';
+    managePlayersBtn.onclick = () => navigateTo('players');
+    topBar.appendChild(managePlayersBtn);
+
     const resetBtn = document.createElement('button');
     resetBtn.textContent = 'Reset Dados';
     resetBtn.className = 'danger';
@@ -175,14 +181,35 @@ function renderDashboard(container) {
 
 // 2. Gestão de Jogadores
 function renderPlayers(container) {
+    const headerDiv = document.createElement('div');
+    headerDiv.style.display = 'flex';
+    headerDiv.style.justifyContent = 'space-between';
+    headerDiv.style.alignItems = 'center';
+    headerDiv.style.marginBottom = '20px';
+
     const h1 = document.createElement('h1');
     h1.textContent = 'Jogadores';
-    container.appendChild(h1);
+    h1.style.marginBottom = '0';
+    headerDiv.appendChild(h1);
+
+    const backBtn = document.createElement('button');
+    backBtn.textContent = '← Voltar';
+    backBtn.className = 'secondary';
+    backBtn.onclick = () => navigateTo('dashboard');
+    headerDiv.appendChild(backBtn);
+
+    container.appendChild(headerDiv);
+
+    const actionsDiv = document.createElement('div');
+    actionsDiv.style.display = 'flex';
+    actionsDiv.style.gap = '10px';
+    actionsDiv.style.marginBottom = '20px';
+    actionsDiv.style.justifyContent = 'space-between';
 
     const addDiv = document.createElement('div');
     addDiv.style.display = 'flex';
     addDiv.style.gap = '10px';
-    addDiv.style.marginBottom = '20px';
+    addDiv.style.flex = '1';
 
     const input = document.createElement('input');
     input.type = 'text';
@@ -200,7 +227,23 @@ function renderPlayers(container) {
 
     addDiv.appendChild(input);
     addDiv.appendChild(addBtn);
-    container.appendChild(addDiv);
+    actionsDiv.appendChild(addDiv);
+
+    if (state.players.length > 0) {
+        const deleteAllBtn = document.createElement('button');
+        deleteAllBtn.textContent = 'Apagar Todos';
+        deleteAllBtn.className = 'danger';
+        deleteAllBtn.onclick = () => {
+            if (confirm('Tem a certeza que quer apagar TODOS os jogadores?')) {
+                state.players = [];
+                saveState();
+                render();
+            }
+        };
+        actionsDiv.appendChild(deleteAllBtn);
+    }
+
+    container.appendChild(actionsDiv);
 
     const list = document.createElement('ul');
     state.players.forEach(p => {
@@ -1264,10 +1307,12 @@ function renderPlayerProfile(container) {
 function addPlayer(name) {
     const id = state.players.length > 0 ? Math.max(...state.players.map(p => p.id)) + 1 : 1;
     state.players.push({ id, name, gamesPlayed: 0, wins: 0, losses: 0 });
+    saveState();
 }
 
 function removePlayer(id) {
     state.players = state.players.filter(p => p.id !== id);
+    saveState();
 }
 
 function createTournament(numPlayers, numCourts, numRounds, type, selectedIds, pairs) {
