@@ -45,7 +45,17 @@ function initMockData() {
         wins: 0,
         losses: 0
     }));
+    state.tournaments = [];
+    state.activeTournamentId = null;
     saveState();
+}
+
+function deleteTournament(id) {
+    if (confirm('Tem a certeza que quer eliminar este torneio?')) {
+        state.tournaments = state.tournaments.filter(t => t.id !== id);
+        saveState();
+        render();
+    }
 }
 
 // Navigation
@@ -170,9 +180,19 @@ function renderDashboard(container) {
             btn.className = 'primary';
             btn.style.padding = '0.5rem 1rem';
             btn.onclick = () => navigateTo('tournament-view', { id: t.id });
+
+            const delBtn = document.createElement('button');
+            delBtn.textContent = '🗑️';
+            delBtn.className = 'danger';
+            delBtn.style.padding = '0.5rem 1rem';
+            delBtn.style.marginLeft = '10px';
+            delBtn.onclick = () => deleteTournament(t.id);
             
             li.appendChild(infoDiv);
-            li.appendChild(btn);
+            const btnGroup = document.createElement('div');
+            btnGroup.appendChild(btn);
+            btnGroup.appendChild(delBtn);
+            li.appendChild(btnGroup);
             list.appendChild(li);
         });
     }
