@@ -167,9 +167,10 @@ function renderDashboard(container) {
             
             const infoDiv = document.createElement('div');
             const statusColor = t.status === 'Finalizado' ? 'var(--text-muted)' : 'var(--accent-hover)';
+            const displayName = t.name ? t.name : `Torneio #${t.id.slice(-4)}`;
             infoDiv.innerHTML = `
                 <div style="font-weight:600; color:var(--primary); display:flex; align-items:center; gap:0.5rem;">
-                    Torneio #${t.id.slice(-4)}
+                    ${displayName}
                     <span style="font-size:0.75rem; background:${statusColor}; color:white; padding:2px 8px; border-radius:99px;">${t.status || 'Em Curso'}</span>
                 </div>
                 <div style="font-size:0.875rem; color:var(--text-muted); margin-top:0.25rem;">${t.rounds.length} Rondas • ${t.rounds[0].matches.length * 2 * 2} Jogadores</div>
@@ -297,11 +298,28 @@ function renderTournamentView(container) {
     // Header
     const header = document.createElement('div');
     header.style.marginBottom = '20px';
+    const displayName = tournament.name ? tournament.name : `Torneio #${tournament.id.slice(-4)}`;
+    
     header.innerHTML = `
-        <h1 style="margin-bottom:0.5rem">Torneio #${tournament.id.slice(-4)}</h1>
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom: 0.5rem;">
+            <h1 style="margin:0;">${displayName}</h1>
+            <button id="edit-name-btn" class="secondary" style="padding: 4px 8px; font-size: 1rem; border: none; background: transparent; cursor: pointer;">✏️</button>
+        </div>
         <div style="color:var(--text-muted)">${tournament.status || 'Em Curso'}</div>
     `;
     container.appendChild(header);
+
+    const editBtn = document.getElementById('edit-name-btn');
+    if (editBtn) {
+        editBtn.onclick = () => {
+            const newName = prompt('Novo nome para o torneio:', tournament.name || '');
+            if (newName !== null) {
+                tournament.name = newName.trim();
+                saveState();
+                render();
+            }
+        };
+    }
 
     // Tabs
     const tabsContainer = document.createElement('div');
@@ -765,6 +783,12 @@ function renderCreateTournament(container) {
 
     // Ocultamos contadores de jogadores/campos/rondas; usamos seleção e defaults por formato
 
+    const nameLabel = document.createElement('label');
+    nameLabel.textContent = 'Nome do Torneio (Opcional)';
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.placeholder = 'Ex: Torneio de Verão';
+
     const typeLabel = document.createElement('label');
     typeLabel.textContent = 'Tipo de Torneio';
     const typeSelect = document.createElement('select');
@@ -1028,6 +1052,7 @@ function renderCreateTournament(container) {
         const defaultRounds = 5;
         
         createTournament(
+            nameInput.value.trim(),
             ids.length,
             defaultCourts,
             defaultRounds,
@@ -1037,6 +1062,8 @@ function renderCreateTournament(container) {
         );
     };
 
+    form.appendChild(nameLabel);
+    form.appendChild(nameInput);
     form.appendChild(typeLabel);
     form.appendChild(typeSelect);
     form.appendChild(selectionContainer);
@@ -1310,9 +1337,11 @@ function renderPlayerProfile(container) {
             
             const statusColor = t.status === 'Finalizado' ? 'var(--text-muted)' : 'var(--accent-hover)';
             
+            const displayName = t.name ? t.name : `Torneio #${t.id.slice(-4)}`;
+            
             li.innerHTML = `
                 <div>
-                    <div style="font-weight:600">Torneio #${t.id.slice(-4)}</div>
+                    <div style="font-weight:600">${displayName}</div>
                     <div style="font-size:0.875rem; color:var(--text-muted)">${t.type === 'americano' ? 'Americano' : (t.type === 'liga' ? 'Liga' : 'Grupos')}</div>
                 </div>
                 <span style="font-size:0.75rem; background:${statusColor}; color:white; padding:2px 8px; border-radius:99px;">${t.status || 'Em Curso'}</span>
@@ -1335,7 +1364,7 @@ function removePlayer(id) {
     saveState();
 }
 
-function createTournament(numPlayers, numCourts, numRounds, type, selectedIds, pairs) {
+function createTournament(name, numPlayers, numCourts, numRounds, type, selectedIds, pairs) {
     const tournamentId = Date.now().toString();
     let tournament;
     const selectedPlayers = Array.isArray(selectedIds) && selectedIds.length > 0
@@ -1353,6 +1382,7 @@ function createTournament(numPlayers, numCourts, numRounds, type, selectedIds, p
         tournament = createTournamentAmericano(tournamentId, selectedPlayers, numCourts, numRounds);
     }
 
+    tournament.name = name;
     state.tournaments.push(tournament);
     saveState();
 
