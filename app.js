@@ -1491,6 +1491,35 @@ function renderRanking(container) {
     
     // Specific points table for Americano 20 Players
     const pointsTableAmericano20 = [250, 220, 200, 170, 160, 150, 140, 130, 120, 110, 100, 90, 80, 70, 60, 50, 40, 30, 20, 10];
+    
+    // Pontos para Grupos (16 jogadores - 8 duplas)
+    // 1º: 200, 2º: 170, 3º: 150, 4º: 130, 5º: 110, 6º: 90, 7º: 70, 8º: 50
+    // Como os jogadores estão em duplas, os índices 0 e 1 (1º lugar) recebem 200, 2 e 3 recebem 170, etc.
+    const pointsGrupos16 = [
+        200, 200, // 1º Par
+        170, 170, // 2º Par
+        150, 150, // 3º Par
+        130, 130, // 4º Par
+        110, 110, // 5º Par
+        90, 90,   // 6º Par
+        70, 70,   // 7º Par
+        50, 50    // 8º Par
+    ];
+
+    // Pontos para Liga (20 jogadores - 10 duplas)
+    // 1º: 200, ..., 10º: 10
+    const pointsLiga20 = [
+        200, 200, // 1º
+        170, 170, // 2º
+        150, 150, // 3º
+        130, 130, // 4º
+        110, 110, // 5º
+        90, 90,   // 6º
+        70, 70,   // 7º
+        50, 50,   // 8º
+        30, 30,   // 9º
+        10, 10    // 10º
+    ];
 
     const totals = {};
     state.players.forEach(p => {
@@ -1536,8 +1565,20 @@ function renderRanking(container) {
                         update(m.team1, false, m.score1, m.score2);
                         update(m.team2, true, m.score2, m.score1);
                     } else {
-                        update(m.team1, false, m.score1, m.score2);
-                        update(m.team2, false, m.score2, m.score1);
+                        // Draw - Update for Global Ranking too
+                         const updateDraw = (ids, gWon, gLost) => {
+                            ids.forEach(id => {
+                                if (stats[id]) {
+                                    stats[id].played++;
+                                    stats[id].draws = (stats[id].draws || 0) + 1;
+                                    stats[id].gamesWon += gWon;
+                                    stats[id].gamesLost += gLost;
+                                    stats[id].diff = stats[id].gamesWon - stats[id].gamesLost;
+                                }
+                            });
+                        };
+                        updateDraw(m.team1, m.score1, m.score2);
+                        updateDraw(m.team2, m.score2, m.score1);
                     }
                 }
             });
@@ -1554,10 +1595,47 @@ function renderRanking(container) {
         if (t.type === 'americano' && playerIds.size === 20) {
             currentPointsTable = pointsTableAmericano20;
         } else if (t.type === 'americano') {
-             // Fallback for americano with different player count if any, or use same
+             // Fallback for americano with different player count
              currentPointsTable = pointsTableAmericano20; 
+        } else if (t.type === 'grupos') {
+            currentPointsTable = pointsGrupos16;
+            // Para 'grupos', a ordem dos jogadores deve ser baseada na classificação final do torneio, 
+            // não apenas em vitórias/jogos ganhos globais.
+            // computeFinalPlacements devolve [{pos:1, team:[id1, id2]}, ...]
+            // Precisamos reordenar 'arr' (que tem stats individuais) para bater certo com a classificação final.
+            const placements = computeFinalPlacements(t);
+            // Se o torneio já acabou e tem placements calculados
+            if (placements && placements.length > 0) {
+                // Mapa de ID -> Posição
+                const posMap = new Map();
+                placements.forEach(p => {
+                    p.team.forEach(pid => posMap.set(pid, p.pos));
+                });
+                
+                // Ordenar 'arr' pela posição final
+                arr.sort((a, b) => {
+                    const posA = posMap.has(a.id) ? posMap.get(a.id) : 999;
+                    const posB = posMap.has(b.id) ? posMap.get(b.id) : 999;
+                    return posA - posB;
+                });
+            }
+        } else if (t.type === 'liga') {
+            currentPointsTable = pointsLiga20;
+            // Para Liga, a ordem é: Pontos (V*3+E*1) -> Diff -> GW
+            // A ordenação default feita acima (wins -> diff -> gw) ignora empates nos pontos
+            // Vamos reordenar corretamente para a Liga
+            arr.sort((a, b) => {
+                 // Nota: stats[id].wins/draws são calculados acima. 
+                 // Precisamos garantir que draws estão a ser contados aqui no renderRanking também
+                 // O loop acima APENAS contava wins/losses. Falta contar draws para o ranking global.
+                 // Correção rápida: Calcular pontos corretamente
+                 const ptsA = (a.wins * 3) + ((a.draws || 0) * 1);
+                 const ptsB = (b.wins * 3) + ((b.draws || 0) * 1);
+                 if (ptsB !== ptsA) return ptsB - ptsA;
+                 if (b.diff !== a.diff) return b.diff - a.diff;
+                 return b.gamesWon - a.gamesWon;
+            });
         }
-        // Future: Add conditions for 'grupos' or 'liga' if they have specific tables
 
         arr.forEach((p, i) => {
             const pts = i < currentPointsTable.length ? currentPointsTable[i] : 0;
