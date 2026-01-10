@@ -1523,9 +1523,37 @@ function renderRanking(container) {
 
     const totals = {};
     state.players.forEach(p => {
-        totals[p.id] = { id: p.id, name: p.name, points: 0, tournaments: 0, wins: p.wins, losses: p.losses, gamesPlayed: p.gamesPlayed };
+        totals[p.id] = { 
+            id: p.id, 
+            name: p.name, 
+            points: 0, 
+            tournaments: 0, 
+            wins: p.wins, 
+            losses: p.losses, 
+            draws: 0, // Add draws here
+            gamesPlayed: p.gamesPlayed 
+        };
     });
     
+    // We need to calculate global draws from tournament history because 'state.players' 
+    // doesn't have a 'draws' field persisted yet (only wins/losses/gamesPlayed).
+    // Let's iterate all finished tournaments to count draws for display.
+    state.tournaments.forEach(t => {
+        if (t.status !== 'Finalizado' && t.status !== 'Em Curso') return; // Count even ongoing? Usually ranking is finalized only. Let's stick to 'Finalizado' for points, but maybe we want stats from all? 
+        // User asked for "Empates na tabela de ranking". 
+        // If we only have wins/losses in persistent state, we need to compute draws on the fly or add it to state.
+        // Let's compute on the fly from match history for now.
+        
+        t.rounds.forEach(r => {
+            r.matches.forEach(m => {
+                if (m.played && m.score1 === m.score2) {
+                    m.team1.forEach(pid => { if(totals[pid]) totals[pid].draws++; });
+                    m.team2.forEach(pid => { if(totals[pid]) totals[pid].draws++; });
+                }
+            });
+        });
+    });
+
     state.tournaments.forEach(t => {
         if (t.status !== 'Finalizado') return;
         
@@ -1660,8 +1688,9 @@ function renderRanking(container) {
                 <th>Jogador</th>
                 <th>Pontos</th>
                 <th>Torneios</th>
-                <th>Vitórias</th>
-                <th>Derrotas</th>
+                <th>V</th>
+                <th>E</th>
+                <th>D</th>
             </tr>
         </thead>
         <tbody>
@@ -1676,6 +1705,7 @@ function renderRanking(container) {
                         <td>${p.points}</td>
                         <td>${p.tournaments}</td>
                         <td>${p.wins}</td>
+                        <td>${p.draws}</td>
                         <td>${p.losses}</td>
                     </tr>
                 `;
@@ -1712,21 +1742,35 @@ function renderPlayerProfile(container) {
     const statsCard = document.createElement('div');
     statsCard.className = 'card';
     
+    // We need to calculate draws for this player dynamically as it is not in state.players
+    let playerDraws = 0;
+    state.tournaments.forEach(t => {
+        t.rounds.forEach(r => {
+            r.matches.forEach(m => {
+                if (m.played && m.score1 === m.score2) {
+                    if (m.team1.includes(player.id) || m.team2.includes(player.id)) {
+                        playerDraws++;
+                    }
+                }
+            });
+        });
+    });
+
     const winRate = player.gamesPlayed > 0 ? Math.round((player.wins / player.gamesPlayed) * 100) : 0;
     
     statsCard.innerHTML = `
-        <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:20px;">
-            <div style="text-align:center">
+        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px;">
+            <div style="text-align:center; grid-column: span 3; margin-bottom: 10px;">
                 <div style="font-size:2rem; font-weight:700; color:var(--primary)">${player.gamesPlayed}</div>
-                <div style="color:var(--text-muted)">Jogos</div>
-            </div>
-            <div style="text-align:center">
-                <div style="font-size:2rem; font-weight:700; color:var(--accent)">${winRate}%</div>
-                <div style="color:var(--text-muted)">Vitórias</div>
+                <div style="color:var(--text-muted)">Jogos Totais</div>
             </div>
             <div style="text-align:center">
                 <div style="font-size:1.5rem; font-weight:600; color:#22c55e">${player.wins}</div>
                 <div style="color:var(--text-muted)">Vitórias</div>
+            </div>
+            <div style="text-align:center">
+                <div style="font-size:1.5rem; font-weight:600; color:#eab308">${playerDraws}</div>
+                <div style="color:var(--text-muted)">Empates</div>
             </div>
             <div style="text-align:center">
                 <div style="font-size:1.5rem; font-weight:600; color:#ef4444">${player.losses}</div>
