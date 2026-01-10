@@ -157,14 +157,15 @@ function saveState() {
             updateSyncStatus('A enviar...', 'default');
             
             // Guardamos apenas os dados essenciais para partilhar
-            const dataToSave = {
-                players: state.players,
-                tournaments: state.tournaments,
-                activeTournamentId: state.activeTournamentId,
+            // Importante: Remover undefined pois o Firebase não aceita
+            const cleanData = JSON.parse(JSON.stringify({
+                players: state.players || [],
+                tournaments: state.tournaments || [],
+                activeTournamentId: state.activeTournamentId || null,
                 updatedAt: state.updatedAt
-            };
+            }));
             
-            db.ref('appState').set(dataToSave)
+            db.ref('appState').set(cleanData)
               .then(() => {
                   updateSyncStatus('Salvo na Nuvem', 'success');
                   // Optional: Feedback visual menos intrusivo
@@ -2064,11 +2065,19 @@ window.debugTestConnection = function() {
         alert('Firebase não está inicializado. Verifique a consola para erros.');
         return;
     }
-    console.log('Testing connection...');
-    db.ref('.info/connected').once('value')
-        .then(snap => {
-            const isConnected = snap.val();
-            alert('Estado da Conexão Firebase: ' + (isConnected ? 'LIGADO ✅' : 'DESLIGADO ❌'));
+    
+    // Test Write
+    const testRef = db.ref('_test_connection_');
+    const now = Date.now();
+    
+    console.log('Testing Firebase Write...');
+    testRef.set({ check: now })
+        .then(() => {
+            alert('Teste de ESCRITA: SUCESSO! ✅\nA base de dados está acessível e a permitir escrita.');
+            // Clean up
+            testRef.remove();
         })
-        .catch(e => alert('Erro ao testar conexão: ' + e.message));
+        .catch(e => {
+            alert('Teste de ESCRITA: FALHOU ❌\nErro: ' + e.message + '\n\nCausas prováveis:\n1. Sem internet no telemóvel\n2. Regras do Firebase bloqueadas (read/write false)\n3. Configuração incorreta');
+        });
 };
