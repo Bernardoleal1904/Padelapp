@@ -758,8 +758,8 @@ function renderTournamentRanking(container, tournament) {
             const map = groupStats[m.group];
             const k1 = key(m.team1);
             const k2 = key(m.team2);
-            if (!map.has(k1)) map.set(k1, { team: m.team1, wins: 0, played: 0, gw: 0, gl: 0 });
-            if (!map.has(k2)) map.set(k2, { team: m.team2, wins: 0, played: 0, gw: 0, gl: 0 });
+            if (!map.has(k1)) map.set(k1, { team: m.team1, wins: 0, draws: 0, played: 0, gw: 0, gl: 0 });
+            if (!map.has(k2)) map.set(k2, { team: m.team2, wins: 0, draws: 0, played: 0, gw: 0, gl: 0 });
             if (!m.played) return;
             const s1 = map.get(k1);
             const s2 = map.get(k2);
@@ -771,11 +771,14 @@ function renderTournamentRanking(container, tournament) {
             s2.gl += m.score1;
             if (m.score1 > m.score2) s1.wins += 1;
             else if (m.score2 > m.score1) s2.wins += 1;
+            else { s1.draws += 1; s2.draws += 1; }
         }));
         const renderGroupTable = (gName, map) => {
             const arr = Array.from(map.values());
             arr.sort((a, b) => {
-                if (b.wins !== a.wins) return b.wins - a.wins;
+                const ptsA = (a.wins * 3) + (a.draws * 1);
+                const ptsB = (b.wins * 3) + (b.draws * 1);
+                if (ptsB !== ptsA) return ptsB - ptsA;
                 const bd = (b.gw - b.gl) - (a.gw - a.gl);
                 if (bd !== 0) return bd;
                 return b.gw - a.gw;
@@ -785,14 +788,15 @@ function renderTournamentRanking(container, tournament) {
             table.innerHTML = `
                 <thead>
                     <tr>
-                        <th colspan="5" style="text-align:left">Grupo ${gName}</th>
+                        <th colspan="6" style="text-align:left">Grupo ${gName}</th>
                     </tr>
                     <tr>
                         <th style="width: 40px; text-align: center;">#</th>
                         <th style="text-align: left;">Dupla</th>
                         <th style="text-align: center;">Pontos</th>
-                        <th style="text-align: center;">Jogos</th>
-                        <th style="text-align: center;">Diferença</th>
+                        <th style="text-align: center;">J</th>
+                        <th style="text-align: center;">E</th>
+                        <th style="text-align: center;">Dif</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -803,14 +807,16 @@ function renderTournamentRanking(container, tournament) {
                         const p2Html = p2Obj ? `<span style="cursor:pointer; color:var(--primary)" onclick="navigateTo('player-profile', {id:${p2Obj.id}})">${p2Obj.name}</span>` : '';
                         
                         const diff = row.gw - row.gl;
+                        const points = (row.wins * 3) + (row.draws * 1);
                         const highlightClass = i < 2 ? 'rank-highlight' : '';
                         const tag = i >= 2 ? '<span style="font-size:0.75rem; color:var(--text-muted)">quadro dos perdedores</span>' : '';
                         return `
                             <tr class="${highlightClass}">
                                 <td style="text-align: center;">${i + 1}</td>
                                 <td style="font-weight:600; text-align: left;">${p1Html} & ${p2Html} ${tag}</td>
-                                <td style="text-align: center;">${row.wins * 3}</td>
+                                <td style="text-align: center;">${points}</td>
                                 <td style="text-align: center;">${row.played}</td>
+                                <td style="text-align: center;">${row.draws}</td>
                                 <td style="text-align: center;">${diff > 0 ? '+' : ''}${diff}</td>
                             </tr>
                         `;
@@ -853,8 +859,8 @@ function renderTournamentRanking(container, tournament) {
             if (m.phase !== 'league') return;
             const k1 = key(m.team1);
             const k2 = key(m.team2);
-            if (!map.has(k1)) map.set(k1, { team: m.team1, wins: 0, played: 0, gw: 0, gl: 0 });
-            if (!map.has(k2)) map.set(k2, { team: m.team2, wins: 0, played: 0, gw: 0, gl: 0 });
+            if (!map.has(k1)) map.set(k1, { team: m.team1, wins: 0, draws: 0, played: 0, gw: 0, gl: 0 });
+            if (!map.has(k2)) map.set(k2, { team: m.team2, wins: 0, draws: 0, played: 0, gw: 0, gl: 0 });
             if (!m.played) return;
             const s1 = map.get(k1);
             const s2 = map.get(k2);
@@ -866,10 +872,11 @@ function renderTournamentRanking(container, tournament) {
             s2.gl += m.score1;
             if (m.score1 > m.score2) s1.wins += 1;
             else if (m.score2 > m.score1) s2.wins += 1;
+            else { s1.draws += 1; s2.draws += 1; }
         }));
         const arr = Array.from(map.values());
         arr.sort((a, b) => {
-            const ap = a.wins * 3, bp = b.wins * 3;
+            const ap = (a.wins * 3) + (a.draws * 1), bp = (b.wins * 3) + (b.draws * 1);
             if (bp !== ap) return bp - ap;
             const bd = (b.gw - b.gl) - (a.gw - a.gl);
             if (bd !== 0) return bd;
@@ -879,14 +886,15 @@ function renderTournamentRanking(container, tournament) {
         table.innerHTML = `
             <thead>
                 <tr>
-                    <th colspan="5" style="text-align:left">Liga (Duplas Fixas)</th>
+                    <th colspan="6" style="text-align:left">Liga (Duplas Fixas)</th>
                 </tr>
                 <tr>
                     <th>#</th>
                     <th>Dupla</th>
                     <th>Pontos</th>
-                    <th>Jogos</th>
-                    <th>Diferença</th>
+                    <th>J</th>
+                    <th>E</th>
+                    <th>Dif</th>
                 </tr>
             </thead>
             <tbody>
@@ -896,6 +904,7 @@ function renderTournamentRanking(container, tournament) {
                     const p1Html = p1Obj ? `<span style="cursor:pointer; color:var(--primary)" onclick="navigateTo('player-profile', {id:${p1Obj.id}, returnView: 'tournament-view', returnParams: {id: '${tournament.id}', tab: 'ranking'}})">${p1Obj.name}</span>` : '';
                     const p2Html = p2Obj ? `<span style="cursor:pointer; color:var(--primary)" onclick="navigateTo('player-profile', {id:${p2Obj.id}, returnView: 'tournament-view', returnParams: {id: '${tournament.id}', tab: 'ranking'}})">${p2Obj.name}</span>` : '';
                     const diff = row.gw - row.gl;
+                    const points = (row.wins * 3) + (row.draws * 1);
                     const highlightClass = i < 3 ? 'rank-highlight' : '';
                     const medalClass = i === 0 ? 'medal medal-gold' : i === 1 ? 'medal medal-silver' : i === 2 ? 'medal medal-bronze' : '';
                     const medalHtml = medalClass ? `<span class="${medalClass}">${i === 0 ? '1º' : i === 1 ? '2º' : '3º'}</span>` : '';
@@ -903,8 +912,9 @@ function renderTournamentRanking(container, tournament) {
                         <tr class="${highlightClass}">
                             <td>${i + 1}</td>
                             <td style="font-weight:600">${p1Html} & ${p2Html} ${medalHtml}</td>
-                            <td>${row.wins * 3}</td>
+                            <td>${points}</td>
                             <td>${row.played}</td>
+                            <td>${row.draws}</td>
                             <td>${diff > 0 ? '+' : ''}${diff}</td>
                         </tr>
                     `;
@@ -2058,26 +2068,3 @@ loadState().then(() => {
     render();
     startSync();
 });
-
-// Debug Helper
-window.debugTestConnection = function() {
-    if (!isFirebaseReady || !db) {
-        alert('Firebase não está inicializado. Verifique a consola para erros.');
-        return;
-    }
-    
-    // Test Write
-    const testRef = db.ref('_test_connection_');
-    const now = Date.now();
-    
-    console.log('Testing Firebase Write...');
-    testRef.set({ check: now })
-        .then(() => {
-            alert('Teste de ESCRITA: SUCESSO! ✅\nA base de dados está acessível e a permitir escrita.');
-            // Clean up
-            testRef.remove();
-        })
-        .catch(e => {
-            alert('Teste de ESCRITA: FALHOU ❌\nErro: ' + e.message + '\n\nCausas prováveis:\n1. Sem internet no telemóvel\n2. Regras do Firebase bloqueadas (read/write false)\n3. Configuração incorreta');
-        });
-};
