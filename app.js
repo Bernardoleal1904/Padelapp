@@ -130,7 +130,9 @@ async function loadState() {
         if (saved) {
             const localState = JSON.parse(saved);
             state = localState;
-            if (!state.currentView) state.currentView = 'dashboard';
+            // Force dashboard on load instead of restoring previous view
+            state.currentView = 'dashboard';
+            state.viewParams = {};
         }
     } catch (e) {
         console.error('Error loading local state:', e);
@@ -1127,10 +1129,14 @@ function renderCreateTournament(container) {
     const optLiga = document.createElement('option');
     optLiga.value = 'liga';
     optLiga.textContent = 'Liga (Duplas Fixas, 20 jogadores)';
+    const optLiga12 = document.createElement('option');
+    optLiga12.value = 'liga12';
+    optLiga12.textContent = 'Liga 12 (Duplas Fixas, 12 jogadores)';
     typeSelect.appendChild(optChoose);
     typeSelect.appendChild(optAmericano);
     typeSelect.appendChild(optGrupos);
     typeSelect.appendChild(optLiga);
+    typeSelect.appendChild(optLiga12);
     typeSelect.value = '';
 
     // Container for dynamic selection inputs
@@ -1255,7 +1261,10 @@ function renderCreateTournament(container) {
             return false;
         }
         
-        const required = typeSelect.value === 'liga' || typeSelect.value === 'americano' ? 20 : 16;
+        let required = 16;
+        if (typeSelect.value === 'liga' || typeSelect.value === 'americano') required = 20;
+        if (typeSelect.value === 'liga12') required = 12;
+
         const currentCount = Array.from(selectedIds.keys()).length;
         
         if (currentCount !== required) {
@@ -1297,8 +1306,11 @@ function renderCreateTournament(container) {
             }
             selectionContainer.appendChild(grid);
         } else {
-            // Grupos or Liga
-            const numPairs = typeSelect.value === 'liga' ? 10 : 8;
+            // Grupos or Liga or Liga12
+            let numPairs = 8;
+            if (typeSelect.value === 'liga') numPairs = 10;
+            if (typeSelect.value === 'liga12') numPairs = 6;
+
             userPairs = userPairs.length === numPairs ? userPairs : Array(numPairs).fill(null).map(() => [null, null]);
 
             const grid = document.createElement('div');
@@ -1371,7 +1383,7 @@ function renderCreateTournament(container) {
             ids = userPairs.flat();
         }
         
-        const defaultCourts = typeSelect.value === 'liga' || typeSelect.value === 'americano' ? 5 : 4; // Default to 4 courts for Groups as requested
+        const defaultCourts = typeSelect.value === 'liga' || typeSelect.value === 'americano' ? 5 : (typeSelect.value === 'liga12' ? 3 : 4); 
         const defaultRounds = 5;
         
         createTournament(
@@ -1381,7 +1393,7 @@ function renderCreateTournament(container) {
             defaultRounds,
             typeSelect.value,
             ids,
-            (typeSelect.value === 'liga' || typeSelect.value === 'grupos') ? userPairs : undefined
+            (typeSelect.value === 'liga' || typeSelect.value === 'grupos' || typeSelect.value === 'liga12') ? userPairs : undefined
         );
     };
 
@@ -1519,6 +1531,18 @@ function renderRanking(container) {
         50, 50,   // 8º
         30, 30,   // 9º
         10, 10    // 10º
+    ];
+
+    // Pontos para Liga 12 (12 jogadores - 6 duplas)
+    // Vamos assumir uma escala proporcional ou igual à Liga 20 até ao 6º lugar?
+    // Ex: 200, 170, 150, 130, 110, 90
+    const pointsLiga12 = [
+        200, 200, // 1º
+        170, 170, // 2º
+        150, 150, // 3º
+        130, 130, // 4º
+        110, 110, // 5º
+        90, 90    // 6º
     ];
 
     const totals = {};
@@ -1663,6 +1687,16 @@ function renderRanking(container) {
                  if (b.diff !== a.diff) return b.diff - a.diff;
                  return b.gamesWon - a.gamesWon;
             });
+        } else if (t.type === 'liga12') {
+            currentPointsTable = pointsLiga12;
+            // Mesma lógica de ordenação da Liga 20
+            arr.sort((a, b) => {
+                 const ptsA = (a.wins * 3) + ((a.draws || 0) * 1);
+                 const ptsB = (b.wins * 3) + ((b.draws || 0) * 1);
+                 if (ptsB !== ptsA) return ptsB - ptsA;
+                 if (b.diff !== a.diff) return b.diff - a.diff;
+                 return b.gamesWon - a.gamesWon;
+            });
         }
 
         arr.forEach((p, i) => {
@@ -1766,7 +1800,7 @@ function renderPlayerProfile(container) {
             </div>
             <div style="text-align:center">
                 <div style="font-size:1.5rem; font-weight:600; color:#22c55e">${player.wins}</div>
-                <div style="color:var(--text-muted)">Vitórias</div>
+                <div style="color:var(--text-muted)">Vitórias (${winRate}%)</div>
             </div>
             <div style="text-align:center">
                 <div style="font-size:1.5rem; font-weight:600; color:#eab308">${playerDraws}</div>
@@ -1842,6 +1876,10 @@ function createTournament(name, numPlayers, numCourts, numRounds, type, selected
         const validPairs = Array.isArray(pairs) && pairs.length === 10 ? pairs : undefined;
         tournament = validPairs ? createTournamentLiga20(tournamentId, validPairs, numCourts)
                                 : createTournamentLiga20(tournamentId, selectedPlayers.map((p, i, arr) => (i % 2 === 0 && i + 1 < arr.length) ? [arr[i].id, arr[i+1].id] : null).filter(Boolean), numCourts);
+    } else if (type === 'liga12' && selectedPlayers.length === 12) {
+        const validPairs = Array.isArray(pairs) && pairs.length === 6 ? pairs : undefined;
+        tournament = validPairs ? createTournamentLiga12(tournamentId, validPairs, numCourts)
+                                : createTournamentLiga12(tournamentId, selectedPlayers.map((p, i, arr) => (i % 2 === 0 && i + 1 < arr.length) ? [arr[i].id, arr[i+1].id] : null).filter(Boolean), numCourts);
     } else {
         tournament = createTournamentAmericano(tournamentId, selectedPlayers, numCourts, numRounds);
     }
@@ -1886,6 +1924,12 @@ function createTournamentLiga20(tournamentId, pairs, numCourts) {
     const teams = pairs.map(p => [p[0], p[1]]);
     const rounds = buildLiga20ProvidedRounds(teams);
     return { id: tournamentId, status: 'Em Curso', rounds, type: 'liga', teams };
+}
+
+function createTournamentLiga12(tournamentId, pairs, numCourts) {
+    const teams = pairs.map(p => [p[0], p[1]]);
+    const rounds = buildLiga12ProvidedRounds(teams);
+    return { id: tournamentId, status: 'Em Curso', rounds, type: 'liga12', teams };
 }
 
 function buildRoundRobinRounds(teams) {
@@ -1956,6 +2000,37 @@ function buildLiga20ProvidedRounds(teams) {
     ];
     return [{ matches: R1 }, { matches: R2 }, { matches: R3 }, { matches: R4 }, { matches: R5 }];
 }
+
+function buildLiga12ProvidedRounds(teams) {
+    const pick = (i) => teams[i - 1];
+    const mk = (a, b, court) => ({
+        courtId: court,
+        team1: pick(a),
+        team2: pick(b),
+        score1: 0,
+        score2: 0,
+        played: false,
+        phase: 'league'
+    });
+    
+    // Ronda 1: D1 vs D6 (C1), D2 vs D5 (C2), D3 vs D4 (C3)
+    const R1 = [ mk(1, 6, 1), mk(2, 5, 2), mk(3, 4, 3) ];
+    
+    // Ronda 2: D2 vs D3 (C1), D1 vs D5 (C2), D6 vs D4 (C3)
+    const R2 = [ mk(2, 3, 1), mk(1, 5, 2), mk(6, 4, 3) ];
+    
+    // Ronda 3: D5 vs D3 (C1), D6 vs D2 (C2), D1 vs D4 (C3)
+    const R3 = [ mk(5, 3, 1), mk(6, 2, 2), mk(1, 4, 3) ];
+    
+    // Ronda 4: D5 vs D6 (C1), D1 vs D3 (C2), D4 vs D2 (C3)
+    const R4 = [ mk(5, 6, 1), mk(1, 3, 2), mk(4, 2, 3) ];
+    
+    // Ronda 5: D4 vs D5 (C1), D3 vs D6 (C2), D1 vs D2 (C3)
+    const R5 = [ mk(4, 5, 1), mk(3, 6, 2), mk(1, 2, 3) ];
+
+    return [{ matches: R1 }, { matches: R2 }, { matches: R3 }, { matches: R4 }, { matches: R5 }];
+}
+
 function buildAmericano20Rounds(players) {
     const idx = (n) => players[n - 1]?.id;
     const mk = (a1, a2, b1, b2, court) => ({
@@ -2209,6 +2284,11 @@ loadState().then(() => {
     if (typeof applyThemeFromStorage === 'function') {
         applyThemeFromStorage();
     }
+    
+    // Always start at dashboard
+    state.currentView = 'dashboard';
+    state.viewParams = {};
+    
     render();
     startSync();
 });
