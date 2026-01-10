@@ -157,6 +157,8 @@ function saveState() {
               .then(() => updateSyncStatus('Salvo na Nuvem', 'success'))
               .catch((e) => {
                   console.error('Firebase save error:', e);
+                  // Mostrar erro detalhado no ecrã para debug
+                  alert('Erro Firebase Detalhado: ' + e.message + ' | Code: ' + e.code);
                   updateSyncStatus('Erro envio', 'error');
               });
         } else {
