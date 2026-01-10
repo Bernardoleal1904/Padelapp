@@ -394,59 +394,15 @@ function renderDashboard(container) {
         resetBtn.onclick = () => {
             if(confirm('Tem a certeza? Todos os dados serão apagados.')) {
                 localStorage.removeItem('padelAppState');
+                // Se tiver firebase, limpar lá também
+                if(isFirebaseReady) {
+                    db.ref('appState').set(null);
+                }
                 initMockData();
                 render();
             }
         };
         topBar.appendChild(resetBtn);
-
-        // SYNC DEBUG TOOL
-        const debugBtn = document.createElement('button');
-        debugBtn.textContent = '⚠️ Debug Sync';
-        debugBtn.style.backgroundColor = '#666';
-        debugBtn.style.color = 'white';
-        debugBtn.onclick = async () => {
-            try {
-                updateSyncStatus('A testar ligação...', 'default');
-                const start = Date.now();
-                const res = await fetch('/api/state?t=' + start);
-                const text = await res.text();
-                const latency = Date.now() - start;
-                
-                let msg = `Latência: ${latency}ms\n`;
-                msg += `Tamanho: ${text.length} bytes\n`;
-                
-                try {
-                    const data = JSON.parse(text);
-                    const localTime = state.updatedAt || 0;
-                    const remoteTime = data.updatedAt || 0;
-                    msg += `Local TS: ${localTime}\nRemote TS: ${remoteTime}\n`;
-                    msg += `Diferença: ${remoteTime - localTime}ms\n`;
-                    
-                    if (remoteTime > localTime) {
-                        msg += 'STATUS: Servidor é mais recente (Deve atualizar)';
-                    } else if (remoteTime < localTime) {
-                         msg += 'STATUS: Local é mais recente (Deve enviar)';
-                    } else {
-                        msg += 'STATUS: Sincronizado';
-                    }
-
-                    if (confirm(msg + '\n\nForçar download do servidor?')) {
-                        state = data;
-                        render();
-                        updateSyncStatus('Forçado com sucesso', 'success');
-                    }
-                    
-                } catch(e) {
-                    msg += 'ERRO JSON: ' + e.message;
-                    alert(msg);
-                }
-                
-            } catch (e) {
-                alert('ERRO FETCH: ' + e.message);
-            }
-        };
-        topBar.appendChild(debugBtn);
     }
 
     container.appendChild(topBar);
