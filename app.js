@@ -975,8 +975,20 @@ function renderTournamentRanking(container, tournament) {
                     update(m.team2, true, m.score2, m.score1);
                 } else {
                     // Draw
-                    update(m.team1, false, m.score1, m.score2);
-                    update(m.team2, false, m.score2, m.score1);
+                    // For Americano/individual stats, we need to track draws too
+                    const updateDraw = (ids, gWon, gLost) => {
+                        ids.forEach(id => {
+                            if (stats[id]) {
+                                stats[id].played++;
+                                stats[id].draws = (stats[id].draws || 0) + 1;
+                                stats[id].gamesWon += gWon;
+                                stats[id].gamesLost += gLost;
+                                stats[id].diff = stats[id].gamesWon - stats[id].gamesLost;
+                            }
+                        });
+                    };
+                    updateDraw(m.team1, m.score1, m.score2);
+                    updateDraw(m.team2, m.score2, m.score1);
                 }
             }
         });
@@ -985,6 +997,14 @@ function renderTournamentRanking(container, tournament) {
     // Convert to array and sort
     const ranking = Object.values(stats).sort((a, b) => {
         if (b.wins !== a.wins) return b.wins - a.wins;
+        // Secondary sort by draws if wins are equal? Or straight to diff?
+        // Usually: Wins -> Diff -> GamesWon
+        // If we want points: (Wins*3 + Draws*1)
+        /* 
+        const ptsA = (a.wins * 3) + ((a.draws || 0) * 1);
+        const ptsB = (b.wins * 3) + ((b.draws || 0) * 1);
+        if (ptsB !== ptsA) return ptsB - ptsA;
+        */
         if (b.diff !== a.diff) return b.diff - a.diff;
         return b.gamesWon - a.gamesWon;
     });
@@ -995,11 +1015,12 @@ function renderTournamentRanking(container, tournament) {
     table.innerHTML = `
         <thead>
             <tr>
-                <th style="width: 60px; text-align: center;">#</th>
+                <th style="width: 40px; text-align: center;">#</th>
                 <th style="text-align: left;">Jogador</th>
-                <th style="width: 80px; text-align: center;">V</th>
-                <th style="width: 80px; text-align: center;">D</th>
-                <th style="width: 100px; text-align: center;">Saldo</th>
+                <th style="width: 60px; text-align: center;">V</th>
+                <th style="width: 60px; text-align: center;">E</th>
+                <th style="width: 60px; text-align: center;">D</th>
+                <th style="width: 80px; text-align: center;">Saldo</th>
             </tr>
         </thead>
         <tbody>
@@ -1008,6 +1029,7 @@ function renderTournamentRanking(container, tournament) {
                     <td style="text-align: center;">${i + 1}</td>
                     <td style="font-weight:600; cursor:pointer" onclick="navigateTo('player-profile', {id: ${p.id}, returnView: 'tournament-view', returnParams: {id: '${tournament.id}', tab: 'ranking'}})">${p.name}</td>
                     <td style="text-align: center;">${p.wins}</td>
+                    <td style="text-align: center;">${p.draws || 0}</td>
                     <td style="text-align: center;">${p.losses}</td>
                     <td style="text-align: center; color:${p.diff > 0 ? 'var(--accent-hover)' : (p.diff < 0 ? '#ef4444' : 'inherit')}">
                         ${p.diff > 0 ? '+' : ''}${p.diff}
