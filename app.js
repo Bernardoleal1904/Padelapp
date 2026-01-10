@@ -84,6 +84,17 @@ function setupFirebaseListener() {
     ref.on('value', (snapshot) => {
         const remoteState = snapshot.val();
         if (remoteState) {
+            // Check timestamps to prevent overwriting newer local data
+            /* 
+            const localTime = state.updatedAt || 0;
+            const remoteTime = remoteState.updatedAt || 0;
+
+            if (remoteTime < localTime && state.players.length > 0) {
+                console.log('Ignored remote update (older than local)');
+                return;
+            } 
+            */
+
             // console.log('Receiving update from Firebase...');
             updateSyncStatus('Sincronizado', 'success');
             
@@ -154,11 +165,15 @@ function saveState() {
             };
             
             db.ref('appState').set(dataToSave)
-              .then(() => updateSyncStatus('Salvo na Nuvem', 'success'))
+              .then(() => {
+                  updateSyncStatus('Salvo na Nuvem', 'success');
+                  // Optional: Feedback visual menos intrusivo
+                  // alert('Dados salvos com sucesso!'); 
+              })
               .catch((e) => {
                   console.error('Firebase save error:', e);
                   // Mostrar erro detalhado no ecrã para debug
-                  alert('Erro Firebase Detalhado: ' + e.message + ' | Code: ' + e.code);
+                  alert('ERRO AO GUARDAR: ' + e.message + '\nVerifique se tem internet e permissões.');
                   updateSyncStatus('Erro envio', 'error');
               });
         } else {
@@ -609,6 +624,7 @@ function renderTournamentView(container) {
         btn.style.fontWeight = currentTab === id ? '700' : '500';
         btn.style.color = currentTab === id ? 'var(--primary)' : 'var(--text-muted)';
         btn.onclick = () => {
+            console.log('Switching tab to:', id);
             state.viewParams.tab = id;
             render();
         };
@@ -1869,6 +1885,7 @@ function scheduleMatches(matches, numCourts) {
 
 
 function saveMatchResult(tournamentId, roundIndex, matchIndex, s1, s2) {
+    console.log('Saving match result:', tournamentId, roundIndex, matchIndex, s1, s2);
     const tournament = state.tournaments.find(t => t.id === tournamentId);
     const match = tournament.rounds[roundIndex].matches[matchIndex];
     
@@ -2040,3 +2057,18 @@ loadState().then(() => {
     render();
     startSync();
 });
+
+// Debug Helper
+window.debugTestConnection = function() {
+    if (!isFirebaseReady || !db) {
+        alert('Firebase não está inicializado. Verifique a consola para erros.');
+        return;
+    }
+    console.log('Testing connection...');
+    db.ref('.info/connected').once('value')
+        .then(snap => {
+            const isConnected = snap.val();
+            alert('Estado da Conexão Firebase: ' + (isConnected ? 'LIGADO ✅' : 'DESLIGADO ❌'));
+        })
+        .catch(e => alert('Erro ao testar conexão: ' + e.message));
+};
