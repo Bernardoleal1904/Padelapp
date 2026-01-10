@@ -3,6 +3,48 @@ const fs = require('fs');
 const path = require('path');
 
 const server = http.createServer((req, res) => {
+    if (req.url === '/api/state') {
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        if (req.method === 'OPTIONS') {
+            res.writeHead(204);
+            res.end();
+            return;
+        }
+
+        if (req.method === 'GET') {
+            fs.readFile('./db.json', 'utf8', (err, data) => {
+                if (err) {
+                    res.end(JSON.stringify(null)); // No data yet
+                } else {
+                    res.end(data);
+                }
+            });
+            return;
+        }
+
+        if (req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => {
+                body += chunk.toString();
+            });
+            req.on('end', () => {
+                fs.writeFile('./db.json', body, (err) => {
+                    if (err) {
+                        res.writeHead(500);
+                        res.end(JSON.stringify({ error: 'Failed to save' }));
+                    } else {
+                        res.end(JSON.stringify({ success: true }));
+                    }
+                });
+            });
+            return;
+        }
+    }
+
     let filePath = '.' + req.url;
     if (filePath === './') {
         filePath = './index.html';

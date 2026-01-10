@@ -6,30 +6,175 @@ let state = {
     currentView: 'dashboard'
 };
 
+// --- CONFIGURAÇÃO FIREBASE ---
+const firebaseConfig = {
+    apiKey: "AIzaSyC8ix5NCf-UslVRigaRmM6Wq5znzy50GCk",
+    authDomain: "padelapp-49e70.firebaseapp.com",
+    databaseURL: "https://padelapp-49e70-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "padelapp-49e70",
+    storageBucket: "padelapp-49e70.firebasestorage.app",
+    messagingSenderId: "40679894266",
+    appId: "1:40679894266:web:593bd3c5d40f3300c26d43"
+};
+
+let db = null;
+let isFirebaseReady = false;
+
+function initFirebase() {
+    if (typeof firebase !== 'undefined') {
+        try {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.database();
+            isFirebaseReady = true;
+            console.log('Firebase ligado!');
+            setupFirebaseListener();
+        } catch (e) {
+            console.error('Erro ao iniciar Firebase:', e);
+            updateSyncStatus('Erro Config Firebase', 'error');
+        }
+    } else {
+        console.log('Firebase não configurado. A usar modo local offline.');
+        updateSyncStatus('Modo Offline', 'default');
+    }
+}
+
 // Data Persistence
-function loadState() {
+let isSyncing = false;
+let lastSyncStatus = '';
+
+// Debug / Status UI
+function updateSyncStatus(msg, type) {
+    let el = document.getElementById('sync-status');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'sync-status';
+        el.style.position = 'fixed';
+        el.style.bottom = '10px';
+        el.style.right = '10px';
+        el.style.padding = '5px 10px';
+        el.style.borderRadius = '5px';
+        el.style.fontSize = '0.8rem';
+        el.style.zIndex = '9999';
+        el.style.pointerEvents = 'none';
+        document.body.appendChild(el);
+    }
+    
+    el.textContent = msg;
+    if (type === 'success') {
+        el.style.backgroundColor = 'rgba(0, 255, 0, 0.2)';
+        el.style.color = '#006400';
+        // Fade out after 2s
+        setTimeout(() => { if(el.textContent === msg) el.style.opacity = '0'; }, 2000);
+        el.style.opacity = '1';
+    } else if (type === 'error') {
+        el.style.backgroundColor = 'rgba(255, 0, 0, 0.2)';
+        el.style.color = '#8b0000';
+        el.style.opacity = '1';
+    } else {
+        el.style.backgroundColor = 'rgba(0, 0, 0, 0.1)';
+        el.style.color = '#666';
+        el.style.opacity = '1';
+    }
+}
+
+function setupFirebaseListener() {
+    if (!isFirebaseReady) return;
+    
+    const ref = db.ref('appState');
+    ref.on('value', (snapshot) => {
+        const remoteState = snapshot.val();
+        if (remoteState) {
+            // console.log('Receiving update from Firebase...');
+            updateSyncStatus('Sincronizado', 'success');
+            
+            // Preservar navegação local
+            const localView = state.currentView;
+            const localParams = state.viewParams ? JSON.parse(JSON.stringify(state.viewParams)) : {};
+            
+            // Atualizar dados
+            state.players = remoteState.players || [];
+            state.tournaments = remoteState.tournaments || [];
+            state.activeTournamentId = remoteState.activeTournamentId;
+            state.updatedAt = remoteState.updatedAt;
+            
+            // Restaurar navegação
+            state.currentView = localView;
+            state.viewParams = localParams;
+            
+            render();
+        } else {
+            // Se base de dados vazia, manter dados locais ou iniciar mock
+            if (state.players.length === 0) initMockData();
+        }
+    }, (error) => {
+        console.error('Firebase read error:', error);
+        updateSyncStatus('Erro Firebase', 'error');
+    });
+}
+
+async function loadState() {
+    // Fallback to LocalStorage for offline/initial load
     try {
         const saved = localStorage.getItem('padelAppState');
         if (saved) {
-            state = JSON.parse(saved);
+            const localState = JSON.parse(saved);
+            state = localState;
             if (!state.currentView) state.currentView = 'dashboard';
-        } else {
-            initMockData();
         }
     } catch (e) {
-        console.error('Error loading state:', e);
+        console.error('Error loading local state:', e);
+    }
+
+    // Tentar iniciar Firebase
+    initFirebase();
+    
+    // Se não tiver firebase configurado e sem dados locais, inicia mock
+    if (!isFirebaseReady && state.players.length === 0) {
         initMockData();
     }
 }
 
 function saveState() {
     try {
+        state.updatedAt = Date.now();
+        
+        // Save locally (backup)
         localStorage.setItem('padelAppState', JSON.stringify(state));
+        
+        // Save to Firebase
+        if (isFirebaseReady) {
+            updateSyncStatus('A enviar...', 'default');
+            
+            // Guardamos apenas os dados essenciais para partilhar
+            const dataToSave = {
+                players: state.players,
+                tournaments: state.tournaments,
+                activeTournamentId: state.activeTournamentId,
+                updatedAt: state.updatedAt
+            };
+            
+            db.ref('appState').set(dataToSave)
+              .then(() => updateSyncStatus('Salvo na Nuvem', 'success'))
+              .catch((e) => {
+                  console.error('Firebase save error:', e);
+                  updateSyncStatus('Erro envio', 'error');
+              });
+        } else {
+            // Se não tiver firebase
+            updateSyncStatus('Salvo Localmente', 'default');
+        }
+
     } catch (e) {
         console.error('Error saving state:', e);
-        alert('Erro ao guardar dados. O armazenamento local pode estar cheio ou desativado.');
+        alert('Erro ao guardar dados.');
     }
 }
+
+// Legacy polling removed
+function startSync() {
+    // No-op, handled by Firebase listener
+}
+
 
 // Mock Data Initialization
 function initMockData() {
@@ -48,6 +193,108 @@ function initMockData() {
     state.tournaments = [];
     state.activeTournamentId = null;
     saveState();
+}
+
+// Auth
+let isAdmin = localStorage.getItem('padelAuth') === 'true';
+
+function login(username, password) {
+    // Hardcoded credentials for simplicity
+    // Case insensitive comparison for better UX on mobile
+    if (username.toLowerCase() === 'admin' && password.toLowerCase() === 'padel') {
+        isAdmin = true;
+        localStorage.setItem('padelAuth', 'true');
+        navigateTo('dashboard');
+        return true;
+    }
+    console.log('Login failed. Received:', username, password);
+    return false;
+}
+
+function logout() {
+    isAdmin = false;
+    localStorage.removeItem('padelAuth');
+    navigateTo('dashboard');
+}
+
+function handleAuthClick() {
+    if (isAdmin) {
+        if(confirm('Tem a certeza que deseja sair?')) {
+            logout();
+        }
+    } else {
+        navigateTo('login');
+    }
+}
+
+function updateNavbar() {
+    const authBtn = document.getElementById('auth-btn');
+    if (authBtn) {
+        authBtn.textContent = isAdmin ? 'Sair' : 'Login';
+        // Optional: change style based on state
+        if (isAdmin) {
+            authBtn.style.backgroundColor = 'var(--primary)';
+            authBtn.style.color = 'white';
+        } else {
+            authBtn.style.backgroundColor = '';
+            authBtn.style.color = '';
+        }
+    }
+}
+
+function renderLogin(container) {
+    const h1 = document.createElement('h1');
+    h1.textContent = 'Login de Administrador';
+    container.appendChild(h1);
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.maxWidth = '400px';
+    card.style.margin = '0 auto';
+
+    const userLabel = document.createElement('label');
+    userLabel.textContent = 'Utilizador';
+    const userInput = document.createElement('input');
+    userInput.type = 'text';
+    userInput.placeholder = 'admin';
+
+    const passLabel = document.createElement('label');
+    passLabel.textContent = 'Password';
+    const passInput = document.createElement('input');
+    passInput.type = 'password';
+    passInput.placeholder = '•••••';
+
+    const errorMsg = document.createElement('div');
+    errorMsg.style.color = '#ef4444';
+    errorMsg.style.marginBottom = '15px';
+    errorMsg.style.minHeight = '1.2em';
+
+    const loginBtn = document.createElement('button');
+    loginBtn.textContent = 'Entrar';
+    loginBtn.className = 'primary';
+    loginBtn.style.width = '100%';
+    loginBtn.onclick = () => {
+        if (!login(userInput.value.trim(), passInput.value.trim())) {
+            errorMsg.textContent = 'Utilizador ou password incorretos.';
+        }
+    };
+    
+    const backBtn = document.createElement('button');
+    backBtn.textContent = 'Cancelar';
+    backBtn.className = 'secondary';
+    backBtn.style.width = '100%';
+    backBtn.style.marginTop = '10px';
+    backBtn.onclick = () => navigateTo('dashboard');
+
+    card.appendChild(userLabel);
+    card.appendChild(userInput);
+    card.appendChild(passLabel);
+    card.appendChild(passInput);
+    card.appendChild(errorMsg);
+    card.appendChild(loginBtn);
+    card.appendChild(backBtn);
+    
+    container.appendChild(card);
 }
 
 function deleteTournament(id) {
@@ -80,6 +327,7 @@ function toggleTheme() {
 }
 // Render Logic
 function render() {
+    updateNavbar();
     const main = document.getElementById('main-content');
     main.innerHTML = '';
 
@@ -105,6 +353,9 @@ function render() {
         case 'ranking':
             renderRanking(main);
             break;
+        case 'login':
+            renderLogin(main);
+            break;
         default:
             renderDashboard(main);
     }
@@ -122,30 +373,81 @@ function renderDashboard(container) {
     topBar.style.display = 'flex';
     topBar.style.gap = '10px';
     topBar.style.marginBottom = '20px';
+    topBar.style.flexWrap = 'wrap';
 
-    const createBtn = document.createElement('button');
-    createBtn.textContent = 'Criar Jogo / Torneio';
-    createBtn.className = 'primary';
-    createBtn.onclick = () => navigateTo('create-tournament');
-    topBar.appendChild(createBtn);
+    if (isAdmin) {
+        const createBtn = document.createElement('button');
+        createBtn.textContent = 'Criar Jogo / Torneio';
+        createBtn.className = 'primary';
+        createBtn.onclick = () => navigateTo('create-tournament');
+        topBar.appendChild(createBtn);
 
-    const managePlayersBtn = document.createElement('button');
-    managePlayersBtn.textContent = 'Gerir Jogadores';
-    managePlayersBtn.className = 'secondary';
-    managePlayersBtn.onclick = () => navigateTo('players');
-    topBar.appendChild(managePlayersBtn);
+        const managePlayersBtn = document.createElement('button');
+        managePlayersBtn.textContent = 'Gerir Jogadores';
+        managePlayersBtn.className = 'secondary';
+        managePlayersBtn.onclick = () => navigateTo('players');
+        topBar.appendChild(managePlayersBtn);
 
-    const resetBtn = document.createElement('button');
-    resetBtn.textContent = 'Reset Dados';
-    resetBtn.className = 'danger';
-    resetBtn.onclick = () => {
-        if(confirm('Tem a certeza? Todos os dados serão apagados.')) {
-            localStorage.removeItem('padelAppState');
-            initMockData();
-            render();
-        }
-    };
-    topBar.appendChild(resetBtn);
+        const resetBtn = document.createElement('button');
+        resetBtn.textContent = 'Reset Dados';
+        resetBtn.className = 'danger';
+        resetBtn.onclick = () => {
+            if(confirm('Tem a certeza? Todos os dados serão apagados.')) {
+                localStorage.removeItem('padelAppState');
+                initMockData();
+                render();
+            }
+        };
+        topBar.appendChild(resetBtn);
+
+        // SYNC DEBUG TOOL
+        const debugBtn = document.createElement('button');
+        debugBtn.textContent = '⚠️ Debug Sync';
+        debugBtn.style.backgroundColor = '#666';
+        debugBtn.style.color = 'white';
+        debugBtn.onclick = async () => {
+            try {
+                updateSyncStatus('A testar ligação...', 'default');
+                const start = Date.now();
+                const res = await fetch('/api/state?t=' + start);
+                const text = await res.text();
+                const latency = Date.now() - start;
+                
+                let msg = `Latência: ${latency}ms\n`;
+                msg += `Tamanho: ${text.length} bytes\n`;
+                
+                try {
+                    const data = JSON.parse(text);
+                    const localTime = state.updatedAt || 0;
+                    const remoteTime = data.updatedAt || 0;
+                    msg += `Local TS: ${localTime}\nRemote TS: ${remoteTime}\n`;
+                    msg += `Diferença: ${remoteTime - localTime}ms\n`;
+                    
+                    if (remoteTime > localTime) {
+                        msg += 'STATUS: Servidor é mais recente (Deve atualizar)';
+                    } else if (remoteTime < localTime) {
+                         msg += 'STATUS: Local é mais recente (Deve enviar)';
+                    } else {
+                        msg += 'STATUS: Sincronizado';
+                    }
+
+                    if (confirm(msg + '\n\nForçar download do servidor?')) {
+                        state = data;
+                        render();
+                        updateSyncStatus('Forçado com sucesso', 'success');
+                    }
+                    
+                } catch(e) {
+                    msg += 'ERRO JSON: ' + e.message;
+                    alert(msg);
+                }
+                
+            } catch (e) {
+                alert('ERRO FETCH: ' + e.message);
+            }
+        };
+        topBar.appendChild(debugBtn);
+    }
 
     container.appendChild(topBar);
 
@@ -182,17 +484,20 @@ function renderDashboard(container) {
             btn.style.padding = '0.5rem 1rem';
             btn.onclick = () => navigateTo('tournament-view', { id: t.id });
 
-            const delBtn = document.createElement('button');
-            delBtn.textContent = '🗑️';
-            delBtn.className = 'danger';
-            delBtn.style.padding = '0.5rem 1rem';
-            delBtn.style.marginLeft = '10px';
-            delBtn.onclick = () => deleteTournament(t.id);
-            
             li.appendChild(infoDiv);
             const btnGroup = document.createElement('div');
             btnGroup.appendChild(btn);
-            btnGroup.appendChild(delBtn);
+
+            if (isAdmin) {
+                const delBtn = document.createElement('button');
+                delBtn.textContent = '🗑️';
+                delBtn.className = 'danger';
+                delBtn.style.padding = '0.5rem 1rem';
+                delBtn.style.marginLeft = '10px';
+                delBtn.onclick = () => deleteTournament(t.id);
+                btnGroup.appendChild(delBtn);
+            }
+
             li.appendChild(btnGroup);
             list.appendChild(li);
         });
@@ -227,58 +532,64 @@ function renderPlayers(container) {
     actionsDiv.style.marginBottom = '20px';
     actionsDiv.style.justifyContent = 'space-between';
 
-    const addDiv = document.createElement('div');
-    addDiv.style.display = 'flex';
-    addDiv.style.gap = '10px';
-    addDiv.style.flex = '1';
+    if (isAdmin) {
+        const addDiv = document.createElement('div');
+        addDiv.style.display = 'flex';
+        addDiv.style.gap = '10px';
+        addDiv.style.flex = '1';
 
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.placeholder = 'Nome do Jogador';
-    input.style.marginBottom = '0';
-    
-    const addBtn = document.createElement('button');
-    addBtn.textContent = 'Adicionar';
-    addBtn.onclick = () => {
-        if (input.value.trim()) {
-            addPlayer(input.value.trim());
-            render();
-        }
-    };
-
-    addDiv.appendChild(input);
-    addDiv.appendChild(addBtn);
-    actionsDiv.appendChild(addDiv);
-
-    if (state.players.length > 0) {
-        const deleteAllBtn = document.createElement('button');
-        deleteAllBtn.textContent = 'Apagar Todos';
-        deleteAllBtn.className = 'danger';
-        deleteAllBtn.onclick = () => {
-            if (confirm('Tem a certeza que quer apagar TODOS os jogadores?')) {
-                state.players = [];
-                saveState();
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'Nome do Jogador';
+        input.style.marginBottom = '0';
+        
+        const addBtn = document.createElement('button');
+        addBtn.textContent = 'Adicionar';
+        addBtn.onclick = () => {
+            if (input.value.trim()) {
+                addPlayer(input.value.trim());
                 render();
             }
         };
-        actionsDiv.appendChild(deleteAllBtn);
-    }
 
-    container.appendChild(actionsDiv);
+        addDiv.appendChild(input);
+        addDiv.appendChild(addBtn);
+        actionsDiv.appendChild(addDiv);
+
+        if (state.players.length > 0) {
+            const deleteAllBtn = document.createElement('button');
+            deleteAllBtn.textContent = 'Apagar Todos';
+            deleteAllBtn.className = 'danger';
+            deleteAllBtn.onclick = () => {
+                if (confirm('Tem a certeza que quer apagar TODOS os jogadores?')) {
+                    state.players = [];
+                    saveState();
+                    render();
+                }
+            };
+            actionsDiv.appendChild(deleteAllBtn);
+        }
+
+        container.appendChild(actionsDiv);
+    }
 
     const list = document.createElement('ul');
     state.players.forEach(p => {
         const li = document.createElement('li');
         li.className = 'player-list-item';
         li.innerHTML = `<span>${p.name}</span>`;
-        const delBtn = document.createElement('button');
-        delBtn.textContent = 'Remover';
-        delBtn.className = 'danger';
-        delBtn.onclick = () => {
-            removePlayer(p.id);
-            render();
-        };
-        li.appendChild(delBtn);
+        
+        if (isAdmin) {
+            const delBtn = document.createElement('button');
+            delBtn.textContent = 'Remover';
+            delBtn.className = 'danger';
+            delBtn.onclick = () => {
+                removePlayer(p.id);
+                render();
+            };
+            li.appendChild(delBtn);
+        }
+        
         list.appendChild(li);
     });
     container.appendChild(list);
@@ -303,7 +614,7 @@ function renderTournamentView(container) {
     header.innerHTML = `
         <div style="display:flex; align-items:center; gap:10px; margin-bottom: 0.5rem;">
             <h1 style="margin:0;">${displayName}</h1>
-            <button id="edit-name-btn" class="secondary" style="padding: 4px 8px; font-size: 1rem; border: none; background: transparent; cursor: pointer;">✏️</button>
+            ${isAdmin ? '<button id="edit-name-btn" class="secondary" style="padding: 4px 8px; font-size: 1rem; border: none; background: transparent; cursor: pointer;">✏️</button>' : ''}
         </div>
         <div style="color:var(--text-muted)">${tournament.status || 'Em Curso'}</div>
     `;
@@ -774,6 +1085,11 @@ function computeFinalPlacements(t) {
 }
 
 function renderCreateTournament(container) {
+    if (!isAdmin) {
+        navigateTo('login');
+        return;
+    }
+
     const h1 = document.createElement('h1');
     h1.textContent = 'Criar Torneio';
     container.appendChild(h1);
@@ -1084,6 +1400,13 @@ function renderGameDetail(container) {
     h1.textContent = 'Detalhe do Jogo';
     container.appendChild(h1);
 
+    const backBtn = document.createElement('button');
+    backBtn.textContent = '← Voltar';
+    backBtn.className = 'secondary';
+    backBtn.style.marginBottom = '20px';
+    backBtn.onclick = () => navigateTo('tournament-view', { id: tournamentId });
+    container.appendChild(backBtn);
+
     const card = document.createElement('div');
     card.className = 'card';
 
@@ -1126,15 +1449,27 @@ function renderGameDetail(container) {
     scoreDiv.appendChild(score2Input);
     card.appendChild(scoreDiv);
 
-    const saveBtn = document.createElement('button');
-    saveBtn.textContent = 'Guardar Resultado';
-    saveBtn.className = 'primary';
-    saveBtn.style.width = '100%';
-    saveBtn.onclick = () => {
-        saveMatchResult(tournamentId, roundIndex, matchIndex, parseInt(score1Input.value), parseInt(score2Input.value));
-        navigateTo('tournament-view', { id: tournamentId });
-    };
-    card.appendChild(saveBtn);
+    if (isAdmin) {
+        const saveBtn = document.createElement('button');
+        saveBtn.textContent = 'Guardar Resultado';
+        saveBtn.className = 'primary';
+        saveBtn.style.width = '100%';
+        saveBtn.onclick = () => {
+            saveMatchResult(tournamentId, roundIndex, matchIndex, parseInt(score1Input.value), parseInt(score2Input.value));
+            navigateTo('tournament-view', { id: tournamentId });
+        };
+        card.appendChild(saveBtn);
+    } else {
+        score1Input.disabled = true;
+        score2Input.disabled = true;
+        
+        const msg = document.createElement('div');
+        msg.textContent = 'Apenas administradores podem inserir resultados.';
+        msg.style.color = 'var(--text-muted)';
+        msg.style.textAlign = 'center';
+        msg.style.marginTop = '10px';
+        card.appendChild(msg);
+    }
 
     container.appendChild(card);
 }
@@ -1738,6 +2073,12 @@ function updatePlayerStats(team1Ids, team2Ids, score1, score2, multiplier) {
 }
 
 // Init
-loadState();
-applyThemeFromStorage();
-render();
+loadState().then(() => {
+    // If loadState fetched from server, state is populated.
+    // If it failed, it fell back to local storage or mock data.
+    if (typeof applyThemeFromStorage === 'function') {
+        applyThemeFromStorage();
+    }
+    render();
+    startSync();
+});

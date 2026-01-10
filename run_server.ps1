@@ -23,6 +23,36 @@ while ($listener.IsListening) {
     $res = $ctx.Response
     
     $localPath = $ctx.Request.Url.LocalPath.TrimStart('/')
+    
+    # API Handler
+    if ($localPath -eq "api/state") {
+        $res.AddHeader("Access-Control-Allow-Origin", "*")
+        $res.AddHeader("Content-Type", "application/json")
+        
+        if ($ctx.Request.HttpMethod -eq "GET") {
+            $dbPath = Join-Path $root "db.json"
+            if (Test-Path $dbPath) {
+                $bytes = [System.IO.File]::ReadAllBytes($dbPath)
+                $res.OutputStream.Write($bytes, 0, $bytes.Length)
+            } else {
+                $bytes = [System.Text.Encoding]::UTF8.GetBytes("null")
+                $res.OutputStream.Write($bytes, 0, $bytes.Length)
+            }
+            $res.StatusCode = 200
+        }
+        elseif ($ctx.Request.HttpMethod -eq "POST") {
+            $reader = New-Object System.IO.StreamReader($ctx.Request.InputStream)
+            $body = $reader.ReadToEnd()
+            $dbPath = Join-Path $root "db.json"
+            [System.IO.File]::WriteAllText($dbPath, $body)
+            $bytes = [System.Text.Encoding]::UTF8.GetBytes('{"success":true}')
+            $res.OutputStream.Write($bytes, 0, $bytes.Length)
+            $res.StatusCode = 200
+        }
+        $res.Close()
+        continue
+    }
+
     $path = Join-Path $root $localPath
     
     if ($localPath -eq "" -or (Test-Path $path -PathType Container)) { 
