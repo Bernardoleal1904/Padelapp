@@ -52,7 +52,7 @@ body {
 /* Navigation */
 #navbar {
     background: var(--bg-card);
-    padding: 1rem 1.5rem;
+    padding: 1rem 2rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -61,8 +61,6 @@ body {
     top: 0;
     z-index: 100;
     backdrop-filter: saturate(180%) blur(8px);
-    flex-wrap: wrap; /* Permite quebrar linha em ecrãs pequenos */
-    gap: 10px;
 }
 
 .logo {
@@ -72,14 +70,11 @@ body {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    white-space: nowrap; /* Impede o logo de quebrar */
 }
 
 .nav-links {
     display: flex;
-    gap: 0.25rem;
-    flex-wrap: wrap; /* Permite botões quebrarem linha */
-    justify-content: center; /* Centra botões no mobile */
+    gap: 0.5rem;
 }
 
 .nav-btn {
@@ -87,31 +82,9 @@ body {
     border: none;
     color: var(--text-muted);
     font-weight: 500;
-    padding: 0.5rem 0.75rem; /* Reduzi padding lateral para caber mais */
+    padding: 0.5rem 1rem;
     border-radius: var(--radius);
     transition: all 0.2s;
-    font-size: 0.9rem; /* Letra ligeiramente menor para mobile */
-    white-space: nowrap;
-}
-
-@media (max-width: 600px) {
-    #navbar {
-        padding: 0.75rem 1rem;
-        flex-direction: column; /* Empilha logo e botões */
-        gap: 0.75rem;
-    }
-    
-    .nav-links {
-        width: 100%;
-        justify-content: space-between; /* Espalha botões uniformemente */
-    }
-    
-    .nav-btn {
-        padding: 0.4rem 0.5rem;
-        font-size: 0.8rem;
-        flex: 1; /* Botões ocupam largura igual */
-        text-align: center;
-    }
 }
 
 .nav-btn:hover {
@@ -289,6 +262,12 @@ li:hover {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: 1.5rem;
+}
+
+@media (min-width: 1200px) {
+    .grid-5-desktop {
+        grid-template-columns: repeat(5, 1fr) !important;
+    }
 }
 
 .chip {

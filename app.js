@@ -84,17 +84,6 @@ function setupFirebaseListener() {
     ref.on('value', (snapshot) => {
         const remoteState = snapshot.val();
         if (remoteState) {
-            // Check timestamps to prevent overwriting newer local data
-            /* 
-            const localTime = state.updatedAt || 0;
-            const remoteTime = remoteState.updatedAt || 0;
-
-            if (remoteTime < localTime && state.players.length > 0) {
-                console.log('Ignored remote update (older than local)');
-                return;
-            } 
-            */
-
             // console.log('Receiving update from Firebase...');
             updateSyncStatus('Sincronizado', 'success');
             
@@ -130,9 +119,7 @@ async function loadState() {
         if (saved) {
             const localState = JSON.parse(saved);
             state = localState;
-            // Force dashboard on load instead of restoring previous view
-            state.currentView = 'dashboard';
-            state.viewParams = {};
+            if (!state.currentView) state.currentView = 'dashboard';
         }
     } catch (e) {
         console.error('Error loading local state:', e);
@@ -159,24 +146,19 @@ function saveState() {
             updateSyncStatus('A enviar...', 'default');
             
             // Guardamos apenas os dados essenciais para partilhar
-            // Importante: Remover undefined pois o Firebase não aceita
-            const cleanData = JSON.parse(JSON.stringify({
-                players: state.players || [],
-                tournaments: state.tournaments || [],
-                activeTournamentId: state.activeTournamentId || null,
+            const dataToSave = {
+                players: state.players,
+                tournaments: state.tournaments,
+                activeTournamentId: state.activeTournamentId,
                 updatedAt: state.updatedAt
-            }));
+            };
             
-            db.ref('appState').set(cleanData)
-              .then(() => {
-                  updateSyncStatus('Salvo na Nuvem', 'success');
-                  // Optional: Feedback visual menos intrusivo
-                  // alert('Dados salvos com sucesso!'); 
-              })
+            db.ref('appState').set(dataToSave)
+              .then(() => updateSyncStatus('Salvo na Nuvem', 'success'))
               .catch((e) => {
                   console.error('Firebase save error:', e);
                   // Mostrar erro detalhado no ecrã para debug
-                  alert('ERRO AO GUARDAR: ' + e.message + '\nVerifique se tem internet e permissões.');
+                  alert('Erro Firebase Detalhado: ' + e.message + ' | Code: ' + e.code);
                   updateSyncStatus('Erro envio', 'error');
               });
         } else {
@@ -616,7 +598,7 @@ function renderTournamentView(container) {
     tabsContainer.style.borderBottom = '1px solid var(--border)';
     
     const createTab = (id, label) => {
-        const icons = { matches: '📋', ranking: '📈' };
+        const icons = { matches: '📋', ranking: '📈', distribution: '📊' };
         const btn = document.createElement('button');
         btn.innerHTML = `<span style="margin-right:6px">${icons[id] || ''}</span>${label}`;
         btn.style.background = currentTab === id ? 'var(--bg-body)' : 'transparent';
@@ -636,14 +618,74 @@ function renderTournamentView(container) {
 
     tabsContainer.appendChild(createTab('matches', 'Jogos'));
     tabsContainer.appendChild(createTab('ranking', 'Classificação'));
+    if (tournament.type === 'swiss20') {
+        tabsContainer.appendChild(createTab('distribution', 'Campos'));
+    }
     container.appendChild(tabsContainer);
 
     // Content
     if (currentTab === 'matches') {
         renderTournamentMatches(container, tournament);
-    } else {
+    } else if (currentTab === 'ranking') {
         renderTournamentRanking(container, tournament);
+    } else if (currentTab === 'distribution') {
+        renderTournamentDistribution(container, tournament);
     }
+}
+
+function renderTournamentDistribution(container, tournament) {
+    const h2 = document.createElement('h2');
+    h2.textContent = 'Distribuição de Campos por Jogador';
+    container.appendChild(h2);
+
+    const stats = {};
+    const courts = [1, 2, 3, 4, 5];
+    
+    // Initialize
+    const allPlayerIds = new Set();
+    tournament.rounds.forEach(r => r.matches.forEach(m => {
+         m.team1.forEach(id => allPlayerIds.add(id));
+         m.team2.forEach(id => allPlayerIds.add(id));
+    }));
+    
+    allPlayerIds.forEach(id => {
+        stats[id] = { id, name: state.players.find(p => p.id === id)?.name || '?', courts: {} };
+        courts.forEach(c => stats[id].courts[c] = 0);
+    });
+
+    tournament.rounds.forEach(r => {
+        r.matches.forEach(m => {
+            [...m.team1, ...m.team2].forEach(pid => {
+                if (stats[pid]) {
+                    stats[pid].courts[m.courtId] = (stats[pid].courts[m.courtId] || 0) + 1;
+                }
+            });
+        });
+    });
+
+    const sortedPlayers = Object.values(stats).sort((a, b) => a.name.localeCompare(b.name));
+
+    const table = document.createElement('table');
+    table.style.width = '100%';
+    table.style.fontSize = '0.85rem';
+    
+    let headerHtml = '<tr><th style="text-align:left; padding:4px;">Jogador</th>';
+    courts.forEach(c => headerHtml += `<th style="text-align:center; padding:4px; width:40px;">C${c}</th>`);
+    headerHtml += '</tr>';
+
+    let bodyHtml = '';
+    sortedPlayers.forEach(p => {
+        bodyHtml += `<tr><td style="font-weight:600; padding:4px;">${p.name}</td>`;
+        courts.forEach(c => {
+            const count = p.courts[c];
+            const bg = count === 0 ? '' : count === 1 ? 'rgba(34, 197, 94, 0.1)' : count === 2 ? 'rgba(234, 179, 8, 0.2)' : 'rgba(239, 68, 68, 0.2)';
+            bodyHtml += `<td style="text-align:center; padding:4px; background:${bg};">${count}</td>`;
+        });
+        bodyHtml += '</tr>';
+    });
+
+    table.innerHTML = `<thead>${headerHtml}</thead><tbody>${bodyHtml}</tbody>`;
+    container.appendChild(table);
 }
 
 function renderTournamentMatches(container, tournament) {
@@ -668,7 +710,24 @@ function renderTournamentMatches(container, tournament) {
         container.appendChild(roundHeader);
 
         const roundContainer = document.createElement('div');
-        roundContainer.className = 'grid-2';
+        // Check if desktop view (can be done via CSS media query, but inline style here for simplicity logic)
+        // If 5 matches (10 players/20 players scenario), we might want a different grid.
+        // Standard is grid-2 (2 columns).
+        // User wants to see 5 matches simultaneously on PC screen.
+        // We can check if it's a "Liga" or "Americano" with 5 courts.
+        const isFiveCourts = round.matches.length >= 5;
+        
+        roundContainer.className = isFiveCourts ? 'grid-5-desktop' : 'grid-2';
+        if (isFiveCourts) {
+            // Apply custom style if not in CSS
+            roundContainer.style.display = 'grid';
+            roundContainer.style.gap = '15px';
+            // We'll rely on a CSS class or inline media query logic
+            // But since we can't easily inject CSS media queries inline effectively without style tag:
+            // Let's just use a class and ensure CSS handles it or use auto-fill
+             roundContainer.style.gridTemplateColumns = 'repeat(auto-fit, minmax(250px, 1fr))';
+        }
+
         roundContainer.style.marginBottom = '20px';
         
         const firstIncompleteIndex = tournament.rounds.findIndex(r => !r.matches.every(m => m.played));
@@ -733,6 +792,11 @@ function getRoundTitle(tournament, round, roundIndex) {
     if (phases.has('placement7_8')) return 'Final 7º/8º';
     if (phases.has('group')) return 'Fase de Grupos';
     if (phases.has('league')) return `Liga - Jornada ${roundIndex + 1}`;
+    if (phases.has('swiss_r1')) return 'Ronda 1 (Aleatória)';
+    if (phases.has('swiss_r2')) return 'Ronda 2 (Aleatória)';
+    if (phases.has('swiss_r3')) return 'Ronda 3 (Níveis)';
+    if (phases.has('swiss_r4')) return 'Ronda 4 (Níveis)';
+    if (phases.has('swiss_r5')) return 'Ronda 5 (Níveis)';
     return `Ronda ${roundIndex + 1}`;
 }
 
@@ -747,6 +811,7 @@ function getMatchLabel(match) {
     if (ph === 'placement7_8') return 'Jogo 7º/8º';
     if (ph === 'group') return match.group ? `Grupo ${match.group}` : 'Fase de Grupos';
     if (ph === 'league') return 'Liga';
+    if (ph && ph.startsWith('swiss_r')) return `Ronda ${ph.split('_r')[1]}`;
     return '';
 }
 
@@ -760,8 +825,8 @@ function renderTournamentRanking(container, tournament) {
             const map = groupStats[m.group];
             const k1 = key(m.team1);
             const k2 = key(m.team2);
-            if (!map.has(k1)) map.set(k1, { team: m.team1, wins: 0, draws: 0, played: 0, gw: 0, gl: 0 });
-            if (!map.has(k2)) map.set(k2, { team: m.team2, wins: 0, draws: 0, played: 0, gw: 0, gl: 0 });
+            if (!map.has(k1)) map.set(k1, { team: m.team1, wins: 0, played: 0, gw: 0, gl: 0 });
+            if (!map.has(k2)) map.set(k2, { team: m.team2, wins: 0, played: 0, gw: 0, gl: 0 });
             if (!m.played) return;
             const s1 = map.get(k1);
             const s2 = map.get(k2);
@@ -773,14 +838,11 @@ function renderTournamentRanking(container, tournament) {
             s2.gl += m.score1;
             if (m.score1 > m.score2) s1.wins += 1;
             else if (m.score2 > m.score1) s2.wins += 1;
-            else { s1.draws += 1; s2.draws += 1; }
         }));
         const renderGroupTable = (gName, map) => {
             const arr = Array.from(map.values());
             arr.sort((a, b) => {
-                const ptsA = (a.wins * 3) + (a.draws * 1);
-                const ptsB = (b.wins * 3) + (b.draws * 1);
-                if (ptsB !== ptsA) return ptsB - ptsA;
+                if (b.wins !== a.wins) return b.wins - a.wins;
                 const bd = (b.gw - b.gl) - (a.gw - a.gl);
                 if (bd !== 0) return bd;
                 return b.gw - a.gw;
@@ -790,15 +852,14 @@ function renderTournamentRanking(container, tournament) {
             table.innerHTML = `
                 <thead>
                     <tr>
-                        <th colspan="6" style="text-align:left">Grupo ${gName}</th>
+                        <th colspan="5" style="text-align:left">Grupo ${gName}</th>
                     </tr>
                     <tr>
                         <th style="width: 40px; text-align: center;">#</th>
                         <th style="text-align: left;">Dupla</th>
                         <th style="text-align: center;">Pontos</th>
-                        <th style="text-align: center;">J</th>
-                        <th style="text-align: center;">E</th>
-                        <th style="text-align: center;">Dif</th>
+                        <th style="text-align: center;">Jogos</th>
+                        <th style="text-align: center;">Diferença</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -809,16 +870,14 @@ function renderTournamentRanking(container, tournament) {
                         const p2Html = p2Obj ? `<span style="cursor:pointer; color:var(--primary)" onclick="navigateTo('player-profile', {id:${p2Obj.id}})">${p2Obj.name}</span>` : '';
                         
                         const diff = row.gw - row.gl;
-                        const points = (row.wins * 3) + (row.draws * 1);
                         const highlightClass = i < 2 ? 'rank-highlight' : '';
                         const tag = i >= 2 ? '<span style="font-size:0.75rem; color:var(--text-muted)">quadro dos perdedores</span>' : '';
                         return `
                             <tr class="${highlightClass}">
                                 <td style="text-align: center;">${i + 1}</td>
                                 <td style="font-weight:600; text-align: left;">${p1Html} & ${p2Html} ${tag}</td>
-                                <td style="text-align: center;">${points}</td>
+                                <td style="text-align: center;">${row.wins * 3}</td>
                                 <td style="text-align: center;">${row.played}</td>
-                                <td style="text-align: center;">${row.draws}</td>
                                 <td style="text-align: center;">${diff > 0 ? '+' : ''}${diff}</td>
                             </tr>
                         `;
@@ -874,11 +933,15 @@ function renderTournamentRanking(container, tournament) {
             s2.gl += m.score1;
             if (m.score1 > m.score2) s1.wins += 1;
             else if (m.score2 > m.score1) s2.wins += 1;
-            else { s1.draws += 1; s2.draws += 1; }
+            else {
+                s1.draws += 1;
+                s2.draws += 1;
+            }
         }));
         const arr = Array.from(map.values());
         arr.sort((a, b) => {
-            const ap = (a.wins * 3) + (a.draws * 1), bp = (b.wins * 3) + (b.draws * 1);
+            const ap = (a.wins * 3) + (a.draws * 1);
+            const bp = (b.wins * 3) + (b.draws * 1);
             if (bp !== ap) return bp - ap;
             const bd = (b.gw - b.gl) - (a.gw - a.gl);
             if (bd !== 0) return bd;
@@ -888,15 +951,14 @@ function renderTournamentRanking(container, tournament) {
         table.innerHTML = `
             <thead>
                 <tr>
-                    <th colspan="6" style="text-align:left">Liga (Duplas Fixas)</th>
+                    <th colspan="5" style="text-align:left">Liga (Duplas Fixas)</th>
                 </tr>
                 <tr>
                     <th>#</th>
                     <th>Dupla</th>
                     <th>Pontos</th>
-                    <th>J</th>
-                    <th>E</th>
-                    <th>Dif</th>
+                    <th>Jogos</th>
+                    <th>Diferença</th>
                 </tr>
             </thead>
             <tbody>
@@ -906,19 +968,17 @@ function renderTournamentRanking(container, tournament) {
                     const p1Html = p1Obj ? `<span style="cursor:pointer; color:var(--primary)" onclick="navigateTo('player-profile', {id:${p1Obj.id}, returnView: 'tournament-view', returnParams: {id: '${tournament.id}', tab: 'ranking'}})">${p1Obj.name}</span>` : '';
                     const p2Html = p2Obj ? `<span style="cursor:pointer; color:var(--primary)" onclick="navigateTo('player-profile', {id:${p2Obj.id}, returnView: 'tournament-view', returnParams: {id: '${tournament.id}', tab: 'ranking'}})">${p2Obj.name}</span>` : '';
                     const diff = row.gw - row.gl;
-                    const points = (row.wins * 3) + (row.draws * 1);
                     const highlightClass = i < 3 ? 'rank-highlight' : '';
                     const medalClass = i === 0 ? 'medal medal-gold' : i === 1 ? 'medal medal-silver' : i === 2 ? 'medal medal-bronze' : '';
                     const medalHtml = medalClass ? `<span class="${medalClass}">${i === 0 ? '1º' : i === 1 ? '2º' : '3º'}</span>` : '';
                     return `
                         <tr class="${highlightClass}">
-                            <td>${i + 1}</td>
-                            <td style="font-weight:600">${p1Html} & ${p2Html} ${medalHtml}</td>
-                            <td>${points}</td>
-                            <td>${row.played}</td>
-                            <td>${row.draws}</td>
-                            <td>${diff > 0 ? '+' : ''}${diff}</td>
-                        </tr>
+                        <td>${i + 1}</td>
+                        <td style="font-weight:600">${p1Html} & ${p2Html} ${medalHtml}</td>
+                        <td>${(row.wins * 3) + (row.draws * 1)}</td>
+                        <td>${row.played}</td>
+                        <td>${diff > 0 ? '+' : ''}${diff}</td>
+                    </tr>
                     `;
                 }).join('')}
             </tbody>
@@ -942,7 +1002,8 @@ function renderTournamentRanking(container, tournament) {
                 id: id,
                 name: player.name, 
                 played: 0, 
-                wins: 0, 
+                wins: 0,
+                draws: 0, 
                 losses: 0,
                 gamesWon: 0, 
                 gamesLost: 0,
@@ -955,12 +1016,13 @@ function renderTournamentRanking(container, tournament) {
     tournament.rounds.forEach(r => {
         r.matches.forEach(m => {
             if (m.played) {
-                const update = (ids, won, gWon, gLost) => {
+                const update = (ids, won, gWon, gLost, isDraw) => {
                     ids.forEach(id => {
                         if (stats[id]) {
                             stats[id].played++;
                             if (won) stats[id].wins++;
-                            else if (gWon < gLost) stats[id].losses++; // Draw check could be added
+                            else if (isDraw) stats[id].draws++;
+                            else stats[id].losses++;
                             
                             stats[id].gamesWon += gWon;
                             stats[id].gamesLost += gLost;
@@ -970,27 +1032,15 @@ function renderTournamentRanking(container, tournament) {
                 };
 
                 if (m.score1 > m.score2) {
-                    update(m.team1, true, m.score1, m.score2);
-                    update(m.team2, false, m.score2, m.score1);
+                    update(m.team1, true, m.score1, m.score2, false);
+                    update(m.team2, false, m.score2, m.score1, false);
                 } else if (m.score2 > m.score1) {
-                    update(m.team1, false, m.score1, m.score2);
-                    update(m.team2, true, m.score2, m.score1);
+                    update(m.team1, false, m.score1, m.score2, false);
+                    update(m.team2, true, m.score2, m.score1, false);
                 } else {
                     // Draw
-                    // For Americano/individual stats, we need to track draws too
-                    const updateDraw = (ids, gWon, gLost) => {
-                        ids.forEach(id => {
-                            if (stats[id]) {
-                                stats[id].played++;
-                                stats[id].draws = (stats[id].draws || 0) + 1;
-                                stats[id].gamesWon += gWon;
-                                stats[id].gamesLost += gLost;
-                                stats[id].diff = stats[id].gamesWon - stats[id].gamesLost;
-                            }
-                        });
-                    };
-                    updateDraw(m.team1, m.score1, m.score2);
-                    updateDraw(m.team2, m.score2, m.score1);
+                    update(m.team1, false, m.score1, m.score2, true);
+                    update(m.team2, false, m.score2, m.score1, true);
                 }
             }
         });
@@ -998,15 +1048,9 @@ function renderTournamentRanking(container, tournament) {
 
     // Convert to array and sort
     const ranking = Object.values(stats).sort((a, b) => {
-        if (b.wins !== a.wins) return b.wins - a.wins;
-        // Secondary sort by draws if wins are equal? Or straight to diff?
-        // Usually: Wins -> Diff -> GamesWon
-        // If we want points: (Wins*3 + Draws*1)
-        /* 
-        const ptsA = (a.wins * 3) + ((a.draws || 0) * 1);
-        const ptsB = (b.wins * 3) + ((b.draws || 0) * 1);
-        if (ptsB !== ptsA) return ptsB - ptsA;
-        */
+        const ap = (a.wins * 3) + (a.draws * 1);
+        const bp = (b.wins * 3) + (b.draws * 1);
+        if (bp !== ap) return bp - ap;
         if (b.diff !== a.diff) return b.diff - a.diff;
         return b.gamesWon - a.gamesWon;
     });
@@ -1014,26 +1058,29 @@ function renderTournamentRanking(container, tournament) {
     // Render Table
     const table = document.createElement('table');
     table.style.width = '100%';
+    table.style.fontSize = '0.85rem'; // Smaller font for compactness
     table.innerHTML = `
         <thead>
             <tr>
-                <th style="width: 40px; text-align: center;">#</th>
-                <th style="text-align: left;">Jogador</th>
-                <th style="width: 60px; text-align: center;">V</th>
-                <th style="width: 60px; text-align: center;">E</th>
-                <th style="width: 60px; text-align: center;">D</th>
-                <th style="width: 80px; text-align: center;">Saldo</th>
+                <th style="width: 30px; text-align: center; padding: 4px;">#</th>
+                <th style="text-align: left; padding: 4px;">Jogador</th>
+                <th style="width: 40px; text-align: center; padding: 4px;">Pts</th>
+                <th style="width: 30px; text-align: center; padding: 4px;">V</th>
+                <th style="width: 30px; text-align: center; padding: 4px;">E</th>
+                <th style="width: 30px; text-align: center; padding: 4px;">D</th>
+                <th style="width: 50px; text-align: center; padding: 4px;">Dif</th>
             </tr>
         </thead>
         <tbody>
             ${ranking.map((p, i) => `
                 <tr>
-                    <td style="text-align: center;">${i + 1}</td>
-                    <td style="font-weight:600; cursor:pointer" onclick="navigateTo('player-profile', {id: ${p.id}, returnView: 'tournament-view', returnParams: {id: '${tournament.id}', tab: 'ranking'}})">${p.name}</td>
-                    <td style="text-align: center;">${p.wins}</td>
-                    <td style="text-align: center;">${p.draws || 0}</td>
-                    <td style="text-align: center;">${p.losses}</td>
-                    <td style="text-align: center; color:${p.diff > 0 ? 'var(--accent-hover)' : (p.diff < 0 ? '#ef4444' : 'inherit')}">
+                    <td style="text-align: center; padding: 4px;">${i + 1}</td>
+                    <td style="font-weight:600; cursor:pointer; padding: 4px;" onclick="navigateTo('player-profile', {id: ${p.id}, returnView: 'tournament-view', returnParams: {id: '${tournament.id}', tab: 'ranking'}})">${p.name}</td>
+                    <td style="text-align: center; font-weight:bold; padding: 4px;">${(p.wins * 3) + (p.draws * 1)}</td>
+                    <td style="text-align: center; padding: 4px;">${p.wins}</td>
+                    <td style="text-align: center; padding: 4px;">${p.draws}</td>
+                    <td style="text-align: center; padding: 4px;">${p.losses}</td>
+                    <td style="text-align: center; padding: 4px; color:${p.diff > 0 ? 'var(--accent-hover)' : (p.diff < 0 ? '#ef4444' : 'inherit')}">
                         ${p.diff > 0 ? '+' : ''}${p.diff}
                     </td>
                 </tr>
@@ -1131,12 +1178,16 @@ function renderCreateTournament(container) {
     optLiga.textContent = 'Liga (Duplas Fixas, 20 jogadores)';
     const optLiga12 = document.createElement('option');
     optLiga12.value = 'liga12';
-    optLiga12.textContent = 'Liga 12 (Duplas Fixas, 12 jogadores)';
+    optLiga12.textContent = 'Liga 6 duplas fixas (12 jogadores)';
+    const optSwiss20 = document.createElement('option');
+    optSwiss20.value = 'swiss20';
+    optSwiss20.textContent = '20 Jogadores Swiss Format';
     typeSelect.appendChild(optChoose);
     typeSelect.appendChild(optAmericano);
     typeSelect.appendChild(optGrupos);
     typeSelect.appendChild(optLiga);
     typeSelect.appendChild(optLiga12);
+    typeSelect.appendChild(optSwiss20);
     typeSelect.value = '';
 
     // Container for dynamic selection inputs
@@ -1261,10 +1312,7 @@ function renderCreateTournament(container) {
             return false;
         }
         
-        let required = 16;
-        if (typeSelect.value === 'liga' || typeSelect.value === 'americano') required = 20;
-        if (typeSelect.value === 'liga12') required = 12;
-
+        const required = typeSelect.value === 'liga' || typeSelect.value === 'americano' || typeSelect.value === 'swiss20' ? 20 : (typeSelect.value === 'liga12' ? 12 : 16);
         const currentCount = Array.from(selectedIds.keys()).length;
         
         if (currentCount !== required) {
@@ -1282,7 +1330,7 @@ function renderCreateTournament(container) {
         
         if (!typeSelect.value) return;
 
-        if (typeSelect.value === 'americano') {
+        if (typeSelect.value === 'americano' || typeSelect.value === 'swiss20') {
             const grid = document.createElement('div');
             grid.style.display = 'grid';
             grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(250px, 1fr))';
@@ -1306,11 +1354,11 @@ function renderCreateTournament(container) {
             }
             selectionContainer.appendChild(grid);
         } else {
-            // Grupos or Liga or Liga12
+            // Grupos or Liga
             let numPairs = 8;
             if (typeSelect.value === 'liga') numPairs = 10;
             if (typeSelect.value === 'liga12') numPairs = 6;
-
+            
             userPairs = userPairs.length === numPairs ? userPairs : Array(numPairs).fill(null).map(() => [null, null]);
 
             const grid = document.createElement('div');
@@ -1376,14 +1424,17 @@ function renderCreateTournament(container) {
 
     generateBtn.onclick = () => {
         let ids;
-        if (typeSelect.value === 'americano') {
+        if (typeSelect.value === 'americano' || typeSelect.value === 'swiss20') {
             ids = playerOrder;
         } else {
             // For groups/liga, ids are derived from pairs
             ids = userPairs.flat();
         }
         
-        const defaultCourts = typeSelect.value === 'liga' || typeSelect.value === 'americano' ? 5 : (typeSelect.value === 'liga12' ? 3 : 4); 
+        let defaultCourts = 4;
+        if (typeSelect.value === 'liga' || typeSelect.value === 'americano' || typeSelect.value === 'swiss20') defaultCourts = 5;
+        if (typeSelect.value === 'liga12') defaultCourts = 3;
+
         const defaultRounds = 5;
         
         createTournament(
@@ -1393,7 +1444,7 @@ function renderCreateTournament(container) {
             defaultRounds,
             typeSelect.value,
             ids,
-            (typeSelect.value === 'liga' || typeSelect.value === 'grupos' || typeSelect.value === 'liga12') ? userPairs : undefined
+            (typeSelect.value.startsWith('liga') || typeSelect.value === 'grupos') ? userPairs : undefined
         );
     };
 
@@ -1457,12 +1508,12 @@ function renderGameDetail(container) {
     const score1Input = document.createElement('input');
     score1Input.type = 'number';
     score1Input.placeholder = 'Score E1';
-    score1Input.value = match.score1 || 0;
+    score1Input.value = match.played ? match.score1 : '';
 
     const score2Input = document.createElement('input');
     score2Input.type = 'number';
     score2Input.placeholder = 'Score E2';
-    score2Input.value = match.score2 || 0;
+    score2Input.value = match.played ? match.score2 : '';
 
     scoreDiv.appendChild(score1Input);
     scoreDiv.appendChild(score2Input);
@@ -1474,7 +1525,9 @@ function renderGameDetail(container) {
         saveBtn.className = 'primary';
         saveBtn.style.width = '100%';
         saveBtn.onclick = () => {
-            saveMatchResult(tournamentId, roundIndex, matchIndex, parseInt(score1Input.value), parseInt(score2Input.value));
+            const s1 = score1Input.value === '' ? 0 : parseInt(score1Input.value);
+            const s2 = score2Input.value === '' ? 0 : parseInt(score2Input.value);
+            saveMatchResult(tournamentId, roundIndex, matchIndex, s1, s2);
             navigateTo('tournament-view', { id: tournamentId });
         };
         card.appendChild(saveBtn);
@@ -1504,80 +1557,14 @@ function renderRanking(container) {
     // Specific points table for Americano 20 Players
     const pointsTableAmericano20 = [250, 220, 200, 170, 160, 150, 140, 130, 120, 110, 100, 90, 80, 70, 60, 50, 40, 30, 20, 10];
     
-    // Pontos para Grupos (16 jogadores - 8 duplas)
-    // 1º: 200, 2º: 170, 3º: 150, 4º: 130, 5º: 110, 6º: 90, 7º: 70, 8º: 50
-    // Como os jogadores estão em duplas, os índices 0 e 1 (1º lugar) recebem 200, 2 e 3 recebem 170, etc.
-    const pointsGrupos16 = [
-        200, 200, // 1º Par
-        170, 170, // 2º Par
-        150, 150, // 3º Par
-        130, 130, // 4º Par
-        110, 110, // 5º Par
-        90, 90,   // 6º Par
-        70, 70,   // 7º Par
-        50, 50    // 8º Par
-    ];
-
-    // Pontos para Liga (20 jogadores - 10 duplas)
-    // 1º: 200, ..., 10º: 10
-    const pointsLiga20 = [
-        200, 200, // 1º
-        170, 170, // 2º
-        150, 150, // 3º
-        130, 130, // 4º
-        110, 110, // 5º
-        90, 90,   // 6º
-        70, 70,   // 7º
-        50, 50,   // 8º
-        30, 30,   // 9º
-        10, 10    // 10º
-    ];
-
-    // Pontos para Liga 12 (12 jogadores - 6 duplas)
-    // Vamos assumir uma escala proporcional ou igual à Liga 20 até ao 6º lugar?
-    // Ex: 200, 170, 150, 130, 110, 90
-    const pointsLiga12 = [
-        200, 200, // 1º
-        170, 170, // 2º
-        150, 150, // 3º
-        130, 130, // 4º
-        110, 110, // 5º
-        90, 90    // 6º
-    ];
+    // Points table for Liga 12 (6 pairs)
+    const pointsTableLiga12 = [200, 200, 160, 160, 130, 130, 110, 110, 90, 90, 70, 70];
 
     const totals = {};
     state.players.forEach(p => {
-        totals[p.id] = { 
-            id: p.id, 
-            name: p.name, 
-            points: 0, 
-            tournaments: 0, 
-            wins: p.wins, 
-            losses: p.losses, 
-            draws: 0, // Add draws here
-            gamesPlayed: p.gamesPlayed 
-        };
+        totals[p.id] = { id: p.id, name: p.name, points: 0, tournaments: 0, wins: p.wins, losses: p.losses, gamesPlayed: p.gamesPlayed };
     });
     
-    // We need to calculate global draws from tournament history because 'state.players' 
-    // doesn't have a 'draws' field persisted yet (only wins/losses/gamesPlayed).
-    // Let's iterate all finished tournaments to count draws for display.
-    state.tournaments.forEach(t => {
-        if (t.status !== 'Finalizado' && t.status !== 'Em Curso') return; // Count even ongoing? Usually ranking is finalized only. Let's stick to 'Finalizado' for points, but maybe we want stats from all? 
-        // User asked for "Empates na tabela de ranking". 
-        // If we only have wins/losses in persistent state, we need to compute draws on the fly or add it to state.
-        // Let's compute on the fly from match history for now.
-        
-        t.rounds.forEach(r => {
-            r.matches.forEach(m => {
-                if (m.played && m.score1 === m.score2) {
-                    m.team1.forEach(pid => { if(totals[pid]) totals[pid].draws++; });
-                    m.team2.forEach(pid => { if(totals[pid]) totals[pid].draws++; });
-                }
-            });
-        });
-    });
-
     state.tournaments.forEach(t => {
         if (t.status !== 'Finalizado') return;
         
@@ -1617,20 +1604,8 @@ function renderRanking(container) {
                         update(m.team1, false, m.score1, m.score2);
                         update(m.team2, true, m.score2, m.score1);
                     } else {
-                        // Draw - Update for Global Ranking too
-                         const updateDraw = (ids, gWon, gLost) => {
-                            ids.forEach(id => {
-                                if (stats[id]) {
-                                    stats[id].played++;
-                                    stats[id].draws = (stats[id].draws || 0) + 1;
-                                    stats[id].gamesWon += gWon;
-                                    stats[id].gamesLost += gLost;
-                                    stats[id].diff = stats[id].gamesWon - stats[id].gamesLost;
-                                }
-                            });
-                        };
-                        updateDraw(m.team1, m.score1, m.score2);
-                        updateDraw(m.team2, m.score2, m.score1);
+                        update(m.team1, false, m.score1, m.score2);
+                        update(m.team2, false, m.score2, m.score1);
                     }
                 }
             });
@@ -1647,57 +1622,12 @@ function renderRanking(container) {
         if (t.type === 'americano' && playerIds.size === 20) {
             currentPointsTable = pointsTableAmericano20;
         } else if (t.type === 'americano') {
-             // Fallback for americano with different player count
+             // Fallback for americano with different player count if any, or use same
              currentPointsTable = pointsTableAmericano20; 
-        } else if (t.type === 'grupos') {
-            currentPointsTable = pointsGrupos16;
-            // Para 'grupos', a ordem dos jogadores deve ser baseada na classificação final do torneio, 
-            // não apenas em vitórias/jogos ganhos globais.
-            // computeFinalPlacements devolve [{pos:1, team:[id1, id2]}, ...]
-            // Precisamos reordenar 'arr' (que tem stats individuais) para bater certo com a classificação final.
-            const placements = computeFinalPlacements(t);
-            // Se o torneio já acabou e tem placements calculados
-            if (placements && placements.length > 0) {
-                // Mapa de ID -> Posição
-                const posMap = new Map();
-                placements.forEach(p => {
-                    p.team.forEach(pid => posMap.set(pid, p.pos));
-                });
-                
-                // Ordenar 'arr' pela posição final
-                arr.sort((a, b) => {
-                    const posA = posMap.has(a.id) ? posMap.get(a.id) : 999;
-                    const posB = posMap.has(b.id) ? posMap.get(b.id) : 999;
-                    return posA - posB;
-                });
-            }
-        } else if (t.type === 'liga') {
-            currentPointsTable = pointsLiga20;
-            // Para Liga, a ordem é: Pontos (V*3+E*1) -> Diff -> GW
-            // A ordenação default feita acima (wins -> diff -> gw) ignora empates nos pontos
-            // Vamos reordenar corretamente para a Liga
-            arr.sort((a, b) => {
-                 // Nota: stats[id].wins/draws são calculados acima. 
-                 // Precisamos garantir que draws estão a ser contados aqui no renderRanking também
-                 // O loop acima APENAS contava wins/losses. Falta contar draws para o ranking global.
-                 // Correção rápida: Calcular pontos corretamente
-                 const ptsA = (a.wins * 3) + ((a.draws || 0) * 1);
-                 const ptsB = (b.wins * 3) + ((b.draws || 0) * 1);
-                 if (ptsB !== ptsA) return ptsB - ptsA;
-                 if (b.diff !== a.diff) return b.diff - a.diff;
-                 return b.gamesWon - a.gamesWon;
-            });
-        } else if (t.type === 'liga12') {
-            currentPointsTable = pointsLiga12;
-            // Mesma lógica de ordenação da Liga 20
-            arr.sort((a, b) => {
-                 const ptsA = (a.wins * 3) + ((a.draws || 0) * 1);
-                 const ptsB = (b.wins * 3) + ((b.draws || 0) * 1);
-                 if (ptsB !== ptsA) return ptsB - ptsA;
-                 if (b.diff !== a.diff) return b.diff - a.diff;
-                 return b.gamesWon - a.gamesWon;
-            });
+        } else if (t.type === 'liga' && playerIds.size === 12) {
+             currentPointsTable = pointsTableLiga12;
         }
+        // Future: Add conditions for 'grupos' or 'liga' if they have specific tables
 
         arr.forEach((p, i) => {
             const pts = i < currentPointsTable.length ? currentPointsTable[i] : 0;
@@ -1715,16 +1645,17 @@ function renderRanking(container) {
     });
 
     const table = document.createElement('table');
+    table.style.fontSize = '0.85rem';
     table.innerHTML = `
         <thead>
             <tr>
-                <th>#</th>
-                <th>Jogador</th>
-                <th>Pontos</th>
-                <th>Torneios</th>
-                <th>V</th>
-                <th>E</th>
-                <th>D</th>
+                <th style="width: 30px; text-align: center; padding: 4px;">#</th>
+                <th style="text-align: left; padding: 4px;">Jogador</th>
+                <th style="width: 40px; text-align: center; padding: 4px;">Pts</th>
+                <th style="width: 30px; text-align: center; padding: 4px;">T</th>
+                <th style="width: 30px; text-align: center; padding: 4px;">V</th>
+                <th style="width: 30px; text-align: center; padding: 4px;">E</th>
+                <th style="width: 30px; text-align: center; padding: 4px;">D</th>
             </tr>
         </thead>
         <tbody>
@@ -1732,15 +1663,26 @@ function renderRanking(container) {
                 const highlightClass = i < 3 ? 'rank-highlight' : '';
                 const medalClass = i === 0 ? 'medal medal-gold' : i === 1 ? 'medal medal-silver' : i === 2 ? 'medal medal-bronze' : '';
                 const medalHtml = medalClass ? `<span class="${medalClass}">${i + 1}º</span>` : '';
+                // Calculate draws dynamically
+                const playerDraws = state.tournaments.reduce((acc, t) => {
+                     let draws = 0;
+                     t.rounds.forEach(r => r.matches.forEach(m => {
+                         if (m.played && m.score1 === m.score2 && (m.team1.includes(p.id) || m.team2.includes(p.id))) {
+                             draws++;
+                         }
+                     }));
+                     return acc + draws;
+                }, 0);
+
                 return `
                     <tr class="${highlightClass}">
-                        <td>${i + 1}</td>
-                        <td style="font-weight:600; cursor:pointer" onclick="navigateTo('player-profile', {id: ${p.id}, returnView: 'ranking'})">${p.name} ${medalHtml}</td>
-                        <td>${p.points}</td>
-                        <td>${p.tournaments}</td>
-                        <td>${p.wins}</td>
-                        <td>${p.draws}</td>
-                        <td>${p.losses}</td>
+                        <td style="text-align: center; padding: 4px;">${i + 1}</td>
+                        <td style="font-weight:600; cursor:pointer; padding: 4px;" onclick="navigateTo('player-profile', {id: ${p.id}, returnView: 'ranking'})">${p.name} ${medalHtml}</td>
+                        <td style="text-align: center; font-weight:bold; padding: 4px;">${p.points}</td>
+                        <td style="text-align: center; padding: 4px;">${p.tournaments}</td>
+                        <td style="text-align: center; padding: 4px;">${p.wins}</td>
+                        <td style="text-align: center; padding: 4px;">${playerDraws}</td>
+                        <td style="text-align: center; padding: 4px;">${p.losses}</td>
                     </tr>
                 `;
             }).join('')}
@@ -1756,10 +1698,36 @@ function renderPlayerProfile(container) {
     
     if (!player) return navigateTo('ranking');
 
+    const header = document.createElement('div');
+    header.style.display = 'flex';
+    header.style.alignItems = 'center';
+    header.style.gap = '10px';
+    header.style.marginBottom = '0.5rem';
+
     const h1 = document.createElement('h1');
     h1.textContent = player.name;
-    h1.style.marginBottom = '0.5rem';
-    container.appendChild(h1);
+    h1.style.margin = '0';
+    
+    const editBtn = document.createElement('button');
+    editBtn.innerHTML = '✏️';
+    editBtn.className = 'secondary';
+    editBtn.style.padding = '4px 8px';
+    editBtn.style.fontSize = '1rem';
+    editBtn.style.border = 'none';
+    editBtn.style.background = 'transparent';
+    editBtn.style.cursor = 'pointer';
+    editBtn.onclick = () => {
+        const newName = prompt('Novo nome para o jogador:', player.name);
+        if (newName && newName.trim() !== '') {
+            player.name = newName.trim();
+            saveState();
+            render();
+        }
+    };
+
+    header.appendChild(h1);
+    header.appendChild(editBtn);
+    container.appendChild(header);
     
     const backBtn = document.createElement('button');
     backBtn.textContent = '← Voltar';
@@ -1776,37 +1744,38 @@ function renderPlayerProfile(container) {
     const statsCard = document.createElement('div');
     statsCard.className = 'card';
     
-    // We need to calculate draws for this player dynamically as it is not in state.players
-    let playerDraws = 0;
-    state.tournaments.forEach(t => {
-        t.rounds.forEach(r => {
-            r.matches.forEach(m => {
-                if (m.played && m.score1 === m.score2) {
-                    if (m.team1.includes(player.id) || m.team2.includes(player.id)) {
-                        playerDraws++;
-                    }
-                }
-            });
-        });
-    });
-
     const winRate = player.gamesPlayed > 0 ? Math.round((player.wins / player.gamesPlayed) * 100) : 0;
     
+    // Calculate draws dynamically
+    const playerDraws = state.tournaments.reduce((acc, t) => {
+         let draws = 0;
+         t.rounds.forEach(r => r.matches.forEach(m => {
+             if (m.played && m.score1 === m.score2 && (m.team1.includes(player.id) || m.team2.includes(player.id))) {
+                 draws++;
+             }
+         }));
+         return acc + draws;
+    }, 0);
+    
     statsCard.innerHTML = `
-        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px;">
-            <div style="text-align:center; grid-column: span 3; margin-bottom: 10px;">
+        <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:20px;">
+            <div style="text-align:center">
                 <div style="font-size:2rem; font-weight:700; color:var(--primary)">${player.gamesPlayed}</div>
-                <div style="color:var(--text-muted)">Jogos Totais</div>
+                <div style="color:var(--text-muted)">Jogos</div>
+            </div>
+            <div style="text-align:center">
+                <div style="font-size:2rem; font-weight:700; color:var(--accent)">${winRate}%</div>
+                <div style="color:var(--text-muted)">Vitórias</div>
             </div>
             <div style="text-align:center">
                 <div style="font-size:1.5rem; font-weight:600; color:#22c55e">${player.wins}</div>
-                <div style="color:var(--text-muted)">Vitórias (${winRate}%)</div>
+                <div style="color:var(--text-muted)">Vitórias</div>
             </div>
             <div style="text-align:center">
                 <div style="font-size:1.5rem; font-weight:600; color:#eab308">${playerDraws}</div>
                 <div style="color:var(--text-muted)">Empates</div>
             </div>
-            <div style="text-align:center">
+            <div style="text-align:center; grid-column: span 2">
                 <div style="font-size:1.5rem; font-weight:600; color:#ef4444">${player.losses}</div>
                 <div style="color:var(--text-muted)">Derrotas</div>
             </div>
@@ -1880,6 +1849,8 @@ function createTournament(name, numPlayers, numCourts, numRounds, type, selected
         const validPairs = Array.isArray(pairs) && pairs.length === 6 ? pairs : undefined;
         tournament = validPairs ? createTournamentLiga12(tournamentId, validPairs, numCourts)
                                 : createTournamentLiga12(tournamentId, selectedPlayers.map((p, i, arr) => (i % 2 === 0 && i + 1 < arr.length) ? [arr[i].id, arr[i+1].id] : null).filter(Boolean), numCourts);
+    } else if (type === 'swiss20' && selectedPlayers.length === 20) {
+        tournament = createTournamentSwiss20(tournamentId, selectedPlayers, numCourts);
     } else {
         tournament = createTournamentAmericano(tournamentId, selectedPlayers, numCourts, numRounds);
     }
@@ -1929,7 +1900,93 @@ function createTournamentLiga20(tournamentId, pairs, numCourts) {
 function createTournamentLiga12(tournamentId, pairs, numCourts) {
     const teams = pairs.map(p => [p[0], p[1]]);
     const rounds = buildLiga12ProvidedRounds(teams);
-    return { id: tournamentId, status: 'Em Curso', rounds, type: 'liga12', teams };
+    return { id: tournamentId, status: 'Em Curso', rounds, type: 'liga', teams };
+}
+
+function createTournamentSwiss20(tournamentId, players, numCourts) {
+    const rounds = [];
+    
+    // Helper to check if pair exists in history
+    const pairExists = (p1, p2, historyRounds) => {
+        return historyRounds.some(r => r.matches.some(m => {
+            const t1 = m.team1;
+            const t2 = m.team2;
+            const check = (team) => (team.includes(p1) && team.includes(p2));
+            return check(t1) || check(t2);
+        }));
+    };
+
+    // R1: Random
+    const r1Players = [...players].sort(() => 0.5 - Math.random());
+    const r1Matches = [];
+    for (let c = 0; c < numCourts; c++) {
+        const i = c * 4;
+        r1Matches.push({
+            courtId: c + 1,
+            team1: [r1Players[i].id, r1Players[i+1].id],
+            team2: [r1Players[i+2].id, r1Players[i+3].id],
+            score1: 0, score2: 0, played: false, phase: 'swiss_r1'
+        });
+    }
+    rounds.push({ matches: r1Matches });
+
+    // R2: Random but no repeat partners
+    let r2Matches = [];
+    let attempts = 0;
+    while (attempts < 1000) {
+        const r2Players = [...players].sort(() => 0.5 - Math.random());
+        let valid = true;
+        const currentMatches = [];
+        
+        for (let c = 0; c < numCourts; c++) {
+            const i = c * 4;
+            const p1 = r2Players[i].id;
+            const p2 = r2Players[i+1].id;
+            const p3 = r2Players[i+2].id;
+            const p4 = r2Players[i+3].id;
+            
+            if (pairExists(p1, p2, rounds) || pairExists(p3, p4, rounds)) {
+                valid = false;
+                break;
+            }
+            currentMatches.push({
+                courtId: c + 1,
+                team1: [p1, p2],
+                team2: [p3, p4],
+                score1: 0, score2: 0, played: false, phase: 'swiss_r2'
+            });
+        }
+        
+        if (valid) {
+            r2Matches = currentMatches;
+            break;
+        }
+        attempts++;
+    }
+    
+    if (r2Matches.length === 0) {
+        // Fallback if super unlucky, just take random
+        const r2Players = [...players].sort(() => 0.5 - Math.random());
+        for (let c = 0; c < numCourts; c++) {
+            const i = c * 4;
+            r2Matches.push({
+                courtId: c + 1,
+                team1: [r2Players[i].id, r2Players[i+1].id],
+                team2: [r2Players[i+2].id, r2Players[i+3].id],
+                score1: 0, score2: 0, played: false, phase: 'swiss_r2'
+            });
+        }
+    }
+    
+    // Optimize court assignment for R2 as well (even though R1 was random, we can try to switch it up)
+    const optimizedR2 = distributeMatchesToCourts(r2Matches, rounds, numCourts);
+
+    // Sort matches by courtId
+    optimizedR2.sort((a, b) => a.courtId - b.courtId);
+
+    rounds.push({ matches: optimizedR2 });
+
+    return { id: tournamentId, status: 'Em Curso', rounds, type: 'swiss20', stage: 'r2' };
 }
 
 function buildRoundRobinRounds(teams) {
@@ -2019,7 +2076,8 @@ function buildLiga12ProvidedRounds(teams) {
     // Ronda 2: D2 vs D3 (C1), D1 vs D5 (C2), D6 vs D4 (C3)
     const R2 = [ mk(2, 3, 1), mk(1, 5, 2), mk(6, 4, 3) ];
     
-    // Ronda 3: D5 vs D3 (C1), D6 vs D2 (C2), D1 vs D4 (C3)
+    // Ronda 3: D5 vs D3 (C1), D1 vs D4 (C3), D6 vs D2 (C2) -> Swap C2/C3 to match user request if needed, but order in array matters for visual mostly.
+    // User request: R3: 5-3(C1), 6-2(C2), 1-4(C3)
     const R3 = [ mk(5, 3, 1), mk(6, 2, 2), mk(1, 4, 3) ];
     
     // Ronda 4: D5 vs D6 (C1), D1 vs D3 (C2), D4 vs D2 (C3)
@@ -2030,7 +2088,6 @@ function buildLiga12ProvidedRounds(teams) {
 
     return [{ matches: R1 }, { matches: R2 }, { matches: R3 }, { matches: R4 }, { matches: R5 }];
 }
-
 function buildAmericano20Rounds(players) {
     const idx = (n) => players[n - 1]?.id;
     const mk = (a1, a2, b1, b2, court) => ({
@@ -2115,7 +2172,6 @@ function scheduleMatches(matches, numCourts) {
 
 
 function saveMatchResult(tournamentId, roundIndex, matchIndex, s1, s2) {
-    console.log('Saving match result:', tournamentId, roundIndex, matchIndex, s1, s2);
     const tournament = state.tournaments.find(t => t.id === tournamentId);
     const match = tournament.rounds[roundIndex].matches[matchIndex];
     
@@ -2136,6 +2192,8 @@ function saveMatchResult(tournamentId, roundIndex, matchIndex, s1, s2) {
     }
     if (tournament.type === 'grupos') {
         checkAdvanceStage(tournamentId);
+    } else if (tournament.type === 'swiss20') {
+        checkAdvanceSwissRound(tournamentId);
     }
     
     saveState();
@@ -2206,6 +2264,185 @@ function checkAdvanceStage(tournamentId) {
             saveState();
             return;
         }
+    }
+}
+
+function distributeMatchesToCourts(matches, previousRounds, numCourts) {
+    const courts = Array.from({length: numCourts}, (_, i) => i + 1);
+    
+    // Build player court history
+    const playerCourtCounts = {}; // id -> { courtId -> count }
+    previousRounds.forEach(r => {
+        r.matches.forEach(m => {
+            const c = m.courtId;
+            [...m.team1, ...m.team2].forEach(pid => {
+                if (!playerCourtCounts[pid]) playerCourtCounts[pid] = {};
+                playerCourtCounts[pid][c] = (playerCourtCounts[pid][c] || 0) + 1;
+            });
+        });
+    });
+
+    const getCost = (match, courtId) => {
+        let cost = 0;
+        [...match.team1, ...match.team2].forEach(pid => {
+            const history = playerCourtCounts[pid];
+            if (history && history[courtId]) {
+                // Cost function: exponential to punish repeated courts heavily
+                // 1 prev use = 10, 2 prev uses = 100, etc.
+                cost += Math.pow(10, history[courtId]); 
+
+                // Extra penalty for Court 4 and 5 if used more than once (meaning history >= 1)
+                // User wants max 1 use of Court 4/5.
+                if ((courtId === 4 || courtId === 5) && history[courtId] >= 1) {
+                    cost += 1000000; // Massive penalty (1M) to avoid 2nd use of C4/C5
+                }
+            }
+        });
+        return cost;
+    };
+
+    // Permutations of courts
+    const permute = (arr) => {
+        if (arr.length === 0) return [[]];
+        const first = arr[0];
+        const rest = arr.slice(1);
+        const permsWithoutFirst = permute(rest);
+        const allPerms = [];
+        permsWithoutFirst.forEach(perm => {
+            for (let i = 0; i <= perm.length; i++) {
+                const withFirst = [...perm.slice(0, i), first, ...perm.slice(i)];
+                allPerms.push(withFirst);
+            }
+        });
+        return allPerms;
+    };
+
+    const courtPermutations = permute(courts); // For 5 courts, 120 perms.
+
+    let bestPermutation = null;
+    let minCost = Infinity;
+
+    courtPermutations.forEach(perm => {
+        let currentCost = 0;
+        matches.forEach((m, i) => {
+            if (i < perm.length) {
+                currentCost += getCost(m, perm[i]);
+            }
+        });
+
+        if (currentCost < minCost) {
+            minCost = currentCost;
+            bestPermutation = perm;
+        }
+    });
+
+    // Assign
+    matches.forEach((m, i) => {
+        if (bestPermutation && i < bestPermutation.length) {
+            m.courtId = bestPermutation[i];
+        } else {
+             m.courtId = i + 1; // Fallback
+        }
+    });
+    
+    return matches;
+}
+
+function checkAdvanceSwissRound(tournamentId) {
+    const t = state.tournaments.find(t => t.id === tournamentId);
+    if (!t) return;
+
+    // Check if current round is fully played
+    const currentRoundIndex = t.rounds.length - 1;
+    const currentRound = t.rounds[currentRoundIndex];
+    if (!currentRound.matches.every(m => m.played)) return;
+
+    // If we have played R2 or more (so we are moving to R3, R4, R5...)
+    // AND we haven't reached 5 rounds yet (R1..R5)
+    if (t.rounds.length >= 2 && t.rounds.length < 5) {
+        // Compute Ranking
+        const stats = {};
+        // Initialize
+        const allPlayerIds = new Set();
+        t.rounds.forEach(r => r.matches.forEach(m => {
+             m.team1.forEach(id => allPlayerIds.add(id));
+             m.team2.forEach(id => allPlayerIds.add(id));
+        }));
+        
+        allPlayerIds.forEach(id => {
+            stats[id] = { id, wins: 0, diff: 0, gw: 0, gl: 0 };
+        });
+
+        t.rounds.forEach(r => r.matches.forEach(m => {
+            if (!m.played) return;
+            const update = (ids, won, gw, gl) => {
+                ids.forEach(id => {
+                    if (stats[id]) {
+                        if (won) stats[id].wins++;
+                        stats[id].gw += gw;
+                        stats[id].gl += gl;
+                        stats[id].diff = stats[id].gw - stats[id].gl;
+                    }
+                });
+            };
+            if (m.score1 > m.score2) {
+                update(m.team1, true, m.score1, m.score2);
+                update(m.team2, false, m.score2, m.score1);
+            } else if (m.score2 > m.score1) {
+                update(m.team1, false, m.score1, m.score2);
+                update(m.team2, true, m.score2, m.score1);
+            } else {
+                // Draw
+                // User said: "base number of wins and in case of tie, diff and games won"
+                // Usually draws count as 0.5 or 1 pt?
+                // Earlier we implemented draw = 1 pt. Let's keep that logic consistent?
+                // Or user strictly said "Wins".
+                // "tendo por base o número de vitórias" -> implies raw win count.
+                // But if we use global logic where draw = 1pt, maybe "Points" is better.
+                // Let's stick to "Wins" as requested here.
+                update(m.team1, false, m.score1, m.score2);
+                update(m.team2, false, m.score2, m.score1);
+            }
+        }));
+
+        const rankedPlayers = Object.values(stats).sort((a, b) => {
+            if (b.wins !== a.wins) return b.wins - a.wins;
+            if (b.diff !== a.diff) return b.diff - a.diff;
+            return b.gw - a.gw;
+        });
+
+        // Group by 4 and create matches (1+4 vs 2+3)
+        const nextMatches = [];
+        for (let i = 0; i < rankedPlayers.length; i += 4) {
+            if (i + 3 < rankedPlayers.length) {
+                // 1st (i) & 4th (i+3) vs 2nd (i+1) & 3rd (i+2)
+                const p1 = rankedPlayers[i].id;   // 1st
+                const p2 = rankedPlayers[i+1].id; // 2nd
+                const p3 = rankedPlayers[i+2].id; // 3rd
+                const p4 = rankedPlayers[i+3].id; // 4th
+                
+                nextMatches.push({
+                    courtId: null, // To be assigned
+                    team1: [p1, p4],
+                    team2: [p2, p3],
+                    score1: 0, score2: 0, played: false, phase: `swiss_r${t.rounds.length + 1}`
+                });
+            }
+        }
+        
+        // Optimize court assignment to avoid repetition
+        const optimizedMatches = distributeMatchesToCourts(nextMatches, t.rounds, 5);
+        
+        // Sort matches by courtId
+        optimizedMatches.sort((a, b) => a.courtId - b.courtId);
+
+        t.rounds.push({ matches: optimizedMatches });
+        saveState();
+        render(); // Force refresh to show new round
+    } else if (t.rounds.length === 5) {
+        t.status = 'Finalizado';
+        saveState();
+        render();
     }
 }
 
@@ -2284,11 +2521,6 @@ loadState().then(() => {
     if (typeof applyThemeFromStorage === 'function') {
         applyThemeFromStorage();
     }
-    
-    // Always start at dashboard
-    state.currentView = 'dashboard';
-    state.viewParams = {};
-    
     render();
     startSync();
 });
