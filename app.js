@@ -382,7 +382,7 @@ function render() {
 
 // Views
 
-const isAdmin = true; // Forcing admin mode for all users on GitHub Pages
+// const isAdmin = true; // Forcing admin mode for all users on GitHub Pages
 // const isAdmin = currentUser && currentUser.email === 'seu_email@gmail.com'; 
 
 // 1. Dashboard
