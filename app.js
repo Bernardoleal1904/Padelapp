@@ -2522,16 +2522,18 @@ function updatePlayerStats(team1Ids, team2Ids, score1, score2, multiplier) {
 }
 
 // Init
-loadState().then(() => {
-    // If loadState fetched from server, state is populated.
-    // If it failed, it fell back to local storage or mock data.
-    if (typeof applyThemeFromStorage === 'function') {
-        applyThemeFromStorage();
-    }
-    
-    // Force Dashboard on initial load to avoid stuck state
-    state.currentView = 'dashboard';
-    
-    render();
-    startSync();
-});
+window.onload = function() {
+    loadState().then(() => {
+        // If loadState fetched from server, state is populated.
+        // If it failed, it fell back to local storage or mock data.
+        if (typeof applyThemeFromStorage === 'function') {
+            applyThemeFromStorage();
+        }
+        
+        // Force Dashboard on initial load to avoid stuck state
+        state.currentView = 'dashboard';
+        
+        render();
+        startSync();
+    });
+};
