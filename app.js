@@ -41,7 +41,6 @@ function initFirebase() {
 // Data Persistence
 let isSyncing = false;
 let lastSyncStatus = '';
-let saveTimeout = null;
 
 // Debug / Status UI
 function updateSyncStatus(msg, type) {
@@ -146,24 +145,14 @@ async function loadState() {
 }
 
 function saveState() {
-    state.updatedAt = Date.now();
-    
-    // Save locally (backup) - wrapped in try/catch so it doesn't block Firebase save
     try {
+        state.updatedAt = Date.now();
+        
+        // Save locally (backup)
         localStorage.setItem('padelAppState', JSON.stringify(state));
-        updateSyncStatus('Salvo Localmente', 'default');
-    } catch (e) {
-        console.error('Local storage save error:', e);
-        // Continue to Firebase save...
-    }
-    
-    // Save to Firebase (Debounced to save bandwidth)
-    if (isFirebaseReady) {
-        updateSyncStatus('A aguardar...', 'default');
         
-        if (saveTimeout) clearTimeout(saveTimeout);
-        
-        saveTimeout = setTimeout(() => {
+        // Save to Firebase
+        if (isFirebaseReady) {
             updateSyncStatus('A enviar...', 'default');
             
             // Guardamos apenas os dados essenciais para partilhar
@@ -175,12 +164,21 @@ function saveState() {
             };
             
             db.ref('appState').set(dataToSave)
-                .then(() => updateSyncStatus('Salvo na Nuvem', 'success'))
-                .catch((e) => {
-                    console.error('Firebase save error:', e);
-                    updateSyncStatus('Erro Permissões', 'error');
-                });
-        }, 2000); // Wait 2 seconds before sending to cloud
+              .then(() => updateSyncStatus('Salvo na Nuvem', 'success'))
+              .catch((e) => {
+                  console.error('Firebase save error:', e);
+                  // Não mostrar alert intrusivo, apenas atualizar status
+                  updateSyncStatus('Erro Permissões', 'error');
+              });
+        } else {
+            // Se não tiver firebase
+            updateSyncStatus('Salvo Localmente', 'default');
+        }
+
+    } catch (e) {
+        console.error('Error saving state:', e);
+        // Remove intrusive alert
+        updateSyncStatus('Erro ao guardar', 'error');
     }
 }
 
