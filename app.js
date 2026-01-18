@@ -119,11 +119,21 @@ async function loadState() {
         const saved = localStorage.getItem('padelAppState');
         if (saved) {
             const localState = JSON.parse(saved);
+            // Ensure structure is valid by merging or checking
             state = localState;
+            if (!Array.isArray(state.players)) state.players = [];
+            if (!Array.isArray(state.tournaments)) state.tournaments = [];
             if (!state.currentView) state.currentView = 'dashboard';
         }
     } catch (e) {
         console.error('Error loading local state:', e);
+        // Reset state on error
+        state = {
+            players: [],
+            tournaments: [],
+            activeTournamentId: null,
+            currentView: 'dashboard'
+        };
     }
 
     // Tentar iniciar Firebase
@@ -345,8 +355,10 @@ function render() {
     }
     main.innerHTML = '';
     
-    // Add safety check for state.players
-    if (!state.players) state.players = [];
+    // Safety checks for state
+    if (!state) state = {};
+    if (!Array.isArray(state.players)) state.players = [];
+    if (!Array.isArray(state.tournaments)) state.tournaments = [];
 
     try {
         switch (state.currentView) {
