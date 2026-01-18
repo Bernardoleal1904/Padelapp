@@ -347,45 +347,38 @@ function render() {
         console.error('Main content container not found!');
         return;
     }
-    main.innerHTML = '';
     
-    // Safety checks for state
-    if (!state) state = {};
-    if (!Array.isArray(state.players)) state.players = [];
-    if (!Array.isArray(state.tournaments)) state.tournaments = [];
+    // Clear content safely
+    while (main.firstChild) {
+        main.removeChild(main.firstChild);
+    }
+    
+    // Ensure state exists
+    if (!state) state = { currentView: 'dashboard', players: [], tournaments: [] };
+    
+    // Debug logging
+    console.log('Rendering view:', state.currentView);
 
     try {
-        switch (state.currentView) {
-            case 'dashboard':
-                renderDashboard(main);
-                break;
-            case 'players':
-                renderPlayers(main);
-                break;
-            case 'create-tournament':
-                renderCreateTournament(main);
-                break;
-            case 'tournament-view':
-                renderTournamentView(main);
-                break;
-            case 'game-detail':
-                renderGameDetail(main);
-                break;
-            case 'player-profile':
-                renderPlayerProfile(main);
-                break;
-            case 'ranking':
-                renderRanking(main);
-                break;
-            case 'login':
-                renderLogin(main);
-                break;
-            default:
-                renderDashboard(main);
+        if (state.currentView === 'players') {
+            renderPlayers(main);
+        } else if (state.currentView === 'create-tournament') {
+            renderCreateTournament(main);
+        } else if (state.currentView === 'tournament-view') {
+            renderTournamentView(main);
+        } else if (state.currentView === 'game-detail') {
+            renderGameDetail(main);
+        } else if (state.currentView === 'player-profile') {
+            renderPlayerProfile(main);
+        } else if (state.currentView === 'ranking') {
+            renderRanking(main);
+        } else {
+            // Default to dashboard for 'dashboard', 'login', or unknown
+            renderDashboard(main);
         }
     } catch (e) {
         console.error('Error rendering view:', e);
-        main.innerHTML = '<div style="color:red; padding:20px;">Ocorreu um erro ao carregar esta página. <button onclick="navigateTo(\'dashboard\')">Voltar ao Início</button></div>';
+        main.innerHTML = '<div style="color:red; padding:20px;">Erro: ' + e.message + ' <button onclick="location.reload()">Recarregar</button></div>';
     }
 }
 
@@ -942,7 +935,7 @@ function renderTournamentRanking(container, tournament) {
             container.appendChild(finalTable);
         }
         return;
-    } else if (tournament.type === 'liga') {
+    } else if (tournament.type === 'liga' || tournament.type === 'liga12') {
         const map = new Map();
         const key = (team) => team.slice().sort().join('-');
         tournament.rounds.forEach(r => r.matches.forEach(m => {
