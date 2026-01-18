@@ -99,8 +99,8 @@ function setupFirebaseListener() {
             state.updatedAt = remoteState.updatedAt;
             
             // Restaurar navegação
-            state.currentView = localView;
-            state.viewParams = localParams;
+            // state.currentView = localView; // DISABLE FOR NOW TO FORCE DASHBOARD
+            // state.viewParams = localParams;
             
             render();
         } else {
@@ -2528,6 +2528,10 @@ loadState().then(() => {
     if (typeof applyThemeFromStorage === 'function') {
         applyThemeFromStorage();
     }
+    
+    // Force Dashboard on initial load to avoid stuck state
+    state.currentView = 'dashboard';
+    
     render();
     startSync();
 });
