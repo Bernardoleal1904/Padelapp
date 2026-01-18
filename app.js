@@ -311,9 +311,15 @@ function deleteTournament(id) {
 
 // Navigation
 function navigateTo(view, params = {}) {
-    state.currentView = view;
-    state.viewParams = params;
-    render();
+    try {
+        state.currentView = view;
+        state.viewParams = params;
+        render();
+    } catch (e) {
+        console.error('Error navigating to ' + view, e);
+        // Fallback to dashboard if render fails
+        if (view !== 'dashboard') navigateTo('dashboard');
+    }
 }
 
 function applyThemeFromStorage() {
@@ -333,35 +339,47 @@ function toggleTheme() {
 function render() {
     updateNavbar();
     const main = document.getElementById('main-content');
+    if (!main) {
+        console.error('Main content container not found!');
+        return;
+    }
     main.innerHTML = '';
+    
+    // Add safety check for state.players
+    if (!state.players) state.players = [];
 
-    switch (state.currentView) {
-        case 'dashboard':
-            renderDashboard(main);
-            break;
-        case 'players':
-            renderPlayers(main);
-            break;
-        case 'create-tournament':
-            renderCreateTournament(main);
-            break;
-        case 'tournament-view':
-            renderTournamentView(main);
-            break;
-        case 'game-detail':
-            renderGameDetail(main);
-            break;
-        case 'player-profile':
-            renderPlayerProfile(main);
-            break;
-        case 'ranking':
-            renderRanking(main);
-            break;
-        case 'login':
-            renderLogin(main);
-            break;
-        default:
-            renderDashboard(main);
+    try {
+        switch (state.currentView) {
+            case 'dashboard':
+                renderDashboard(main);
+                break;
+            case 'players':
+                renderPlayers(main);
+                break;
+            case 'create-tournament':
+                renderCreateTournament(main);
+                break;
+            case 'tournament-view':
+                renderTournamentView(main);
+                break;
+            case 'game-detail':
+                renderGameDetail(main);
+                break;
+            case 'player-profile':
+                renderPlayerProfile(main);
+                break;
+            case 'ranking':
+                renderRanking(main);
+                break;
+            case 'login':
+                renderLogin(main);
+                break;
+            default:
+                renderDashboard(main);
+        }
+    } catch (e) {
+        console.error('Error rendering view:', e);
+        main.innerHTML = '<div style="color:red; padding:20px;">Ocorreu um erro ao carregar esta página. <button onclick="navigateTo(\'dashboard\')">Voltar ao Início</button></div>';
     }
 }
 
