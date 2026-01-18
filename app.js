@@ -41,6 +41,7 @@ function initFirebase() {
 // Data Persistence
 let isSyncing = false;
 let lastSyncStatus = '';
+let saveTimeout = null;
 
 // Debug / Status UI
 function updateSyncStatus(msg, type) {
@@ -146,24 +147,30 @@ function saveState() {
         // Continue to Firebase save...
     }
     
-    // Save to Firebase
+    // Save to Firebase (Debounced to save bandwidth)
     if (isFirebaseReady) {
-        updateSyncStatus('A enviar...', 'default');
+        updateSyncStatus('A aguardar...', 'default');
         
-        // Guardamos apenas os dados essenciais para partilhar
-        const dataToSave = {
-            players: state.players,
-            tournaments: state.tournaments,
-            activeTournamentId: state.activeTournamentId,
-            updatedAt: state.updatedAt
-        };
+        if (saveTimeout) clearTimeout(saveTimeout);
         
-        db.ref('appState').set(dataToSave)
-            .then(() => updateSyncStatus('Salvo na Nuvem', 'success'))
-            .catch((e) => {
-                console.error('Firebase save error:', e);
-                updateSyncStatus('Erro Permissões', 'error');
-            });
+        saveTimeout = setTimeout(() => {
+            updateSyncStatus('A enviar...', 'default');
+            
+            // Guardamos apenas os dados essenciais para partilhar
+            const dataToSave = {
+                players: state.players,
+                tournaments: state.tournaments,
+                activeTournamentId: state.activeTournamentId,
+                updatedAt: state.updatedAt
+            };
+            
+            db.ref('appState').set(dataToSave)
+                .then(() => updateSyncStatus('Salvo na Nuvem', 'success'))
+                .catch((e) => {
+                    console.error('Firebase save error:', e);
+                    updateSyncStatus('Erro Permissões', 'error');
+                });
+        }, 2000); // Wait 2 seconds before sending to cloud
     }
 }
 
@@ -360,7 +367,7 @@ function render() {
 
 // Views
 
-const isAdmin = true; // Temporary: Treat all logged-in users as admin for now, or check specific email
+const isAdmin = true; // Forcing admin mode for all users on GitHub Pages
 // const isAdmin = currentUser && currentUser.email === 'seu_email@gmail.com'; 
 
 // 1. Dashboard
