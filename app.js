@@ -210,7 +210,8 @@ function initMockData() {
 }
 
 // Auth
-let isAdmin = localStorage.getItem('padelAuth') === 'true';
+let isAdmin = true; // FORCE ADMIN FOR GITHUB PAGES
+// let isAdmin = localStorage.getItem('padelAuth') === 'true';
 
 function login(username, password) {
     // Hardcoded credentials for simplicity
@@ -242,17 +243,10 @@ function handleAuthClick() {
 }
 
 function updateNavbar() {
+    // No auth button anymore in new index.html, so this is safe to be empty or just check
     const authBtn = document.getElementById('auth-btn');
     if (authBtn) {
-        authBtn.textContent = isAdmin ? 'Sair' : 'Login';
-        // Optional: change style based on state
-        if (isAdmin) {
-            authBtn.style.backgroundColor = 'var(--primary)';
-            authBtn.style.color = 'white';
-        } else {
-            authBtn.style.backgroundColor = '';
-            authBtn.style.color = '';
-        }
+        authBtn.style.display = 'none'; // Hide if present
     }
 }
 
