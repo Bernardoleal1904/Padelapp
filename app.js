@@ -157,9 +157,8 @@ function saveState() {
               .then(() => updateSyncStatus('Salvo na Nuvem', 'success'))
               .catch((e) => {
                   console.error('Firebase save error:', e);
-                  // Mostrar erro detalhado no ecrã para debug
-                  alert('Erro Firebase Detalhado: ' + e.message + ' | Code: ' + e.code);
-                  updateSyncStatus('Erro envio', 'error');
+                  // Não mostrar alert intrusivo, apenas atualizar status
+                  updateSyncStatus('Erro Permissões', 'error');
               });
         } else {
             // Se não tiver firebase
@@ -168,7 +167,7 @@ function saveState() {
 
     } catch (e) {
         console.error('Error saving state:', e);
-        alert('Erro ao guardar dados.');
+        updateSyncStatus('Erro ao guardar', 'error');
     }
 }
 
@@ -364,6 +363,9 @@ function render() {
 }
 
 // Views
+
+const isAdmin = true; // Temporary: Treat all logged-in users as admin for now, or check specific email
+// const isAdmin = currentUser && currentUser.email === 'seu_email@gmail.com'; 
 
 // 1. Dashboard
 function renderDashboard(container) {
@@ -1709,24 +1711,26 @@ function renderPlayerProfile(container) {
     h1.style.margin = '0';
     
     const editBtn = document.createElement('button');
-    editBtn.innerHTML = '✏️';
-    editBtn.className = 'secondary';
-    editBtn.style.padding = '4px 8px';
-    editBtn.style.fontSize = '1rem';
-    editBtn.style.border = 'none';
-    editBtn.style.background = 'transparent';
-    editBtn.style.cursor = 'pointer';
-    editBtn.onclick = () => {
-        const newName = prompt('Novo nome para o jogador:', player.name);
-        if (newName && newName.trim() !== '') {
-            player.name = newName.trim();
-            saveState();
-            render();
-        }
-    };
+    if (isAdmin) {
+        editBtn.innerHTML = '✏️';
+        editBtn.className = 'secondary';
+        editBtn.style.padding = '4px 8px';
+        editBtn.style.fontSize = '1rem';
+        editBtn.style.border = 'none';
+        editBtn.style.background = 'transparent';
+        editBtn.style.cursor = 'pointer';
+        editBtn.onclick = () => {
+            const newName = prompt('Novo nome para o jogador:', player.name);
+            if (newName && newName.trim() !== '') {
+                player.name = newName.trim();
+                saveState();
+                render();
+            }
+        };
+    }
 
     header.appendChild(h1);
-    header.appendChild(editBtn);
+    if (isAdmin) header.appendChild(editBtn);
     container.appendChild(header);
     
     const backBtn = document.createElement('button');
