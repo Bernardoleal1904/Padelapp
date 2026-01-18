@@ -2546,18 +2546,25 @@ function updatePlayerStats(team1Ids, team2Ids, score1, score2, multiplier) {
 }
 
 // Init
-window.onload = function() {
-    loadState().then(() => {
-        // If loadState fetched from server, state is populated.
-        // If it failed, it fell back to local storage or mock data.
-        if (typeof applyThemeFromStorage === 'function') {
-            applyThemeFromStorage();
-        }
-        
-        // Force Dashboard on initial load to avoid stuck state
-        state.currentView = 'dashboard';
-        
-        render();
-        startSync();
-    });
-};
+console.log('App initializing...');
+// Immediate render to ensure UI exists
+updateNavbar();
+
+loadState().then(() => {
+    // If loadState fetched from server, state is populated.
+    // If it failed, it fell back to local storage or mock data.
+    if (typeof applyThemeFromStorage === 'function') {
+        applyThemeFromStorage();
+    }
+    
+    // Force Dashboard on initial load to avoid stuck state
+    state.currentView = 'dashboard';
+    
+    render();
+    startSync();
+}).catch(e => {
+    console.error('Fatal initialization error:', e);
+    // Fallback render if everything fails
+    state.currentView = 'dashboard';
+    render();
+});
