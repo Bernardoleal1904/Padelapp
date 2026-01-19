@@ -1233,6 +1233,192 @@ function renderCreateTournament(container) {
     const selectionContainer = document.createElement('div');
     selectionContainer.style.marginTop = '20px';
 
+    // --- AUTO SELECT / RANDOMIZE FEATURE ---
+    const autoSelectBtn = document.createElement('button');
+    autoSelectBtn.textContent = '⚡ Seleção Múltipla / Aleatória';
+    autoSelectBtn.className = 'secondary';
+    autoSelectBtn.style.marginTop = '15px';
+    autoSelectBtn.style.width = '100%';
+    autoSelectBtn.onclick = () => {
+        if (!typeSelect.value) {
+            alert('Por favor selecione primeiro o tipo de torneio.');
+            return;
+        }
+        openPlayerSelectionModal();
+    };
+
+    const openPlayerSelectionModal = () => {
+        // Create Modal Overlay
+        const overlay = document.createElement('div');
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.width = '100%';
+        overlay.style.height = '100%';
+        overlay.style.backgroundColor = 'rgba(0,0,0,0.8)';
+        overlay.style.zIndex = '10000';
+        overlay.style.display = 'flex';
+        overlay.style.justifyContent = 'center';
+        overlay.style.alignItems = 'center';
+        overlay.style.padding = '20px';
+
+        // Modal Content
+        const modal = document.createElement('div');
+        modal.style.backgroundColor = 'var(--bg-card)';
+        modal.style.padding = '20px';
+        modal.style.borderRadius = 'var(--radius)';
+        modal.style.width = '100%';
+        modal.style.maxWidth = '600px';
+        modal.style.maxHeight = '90vh';
+        modal.style.display = 'flex';
+        modal.style.flexDirection = 'column';
+        modal.style.boxShadow = '0 10px 25px rgba(0,0,0,0.5)';
+
+        // Header
+        const header = document.createElement('div');
+        header.style.display = 'flex';
+        header.style.justifyContent = 'space-between';
+        header.style.alignItems = 'center';
+        header.style.marginBottom = '15px';
+        
+        const mTitle = document.createElement('h3');
+        mTitle.textContent = 'Selecionar Jogadores';
+        mTitle.style.margin = '0';
+        
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = '✕';
+        closeBtn.style.background = 'transparent';
+        closeBtn.style.border = 'none';
+        closeBtn.style.fontSize = '1.5rem';
+        closeBtn.style.cursor = 'pointer';
+        closeBtn.style.color = 'var(--text-muted)';
+        closeBtn.onclick = () => document.body.removeChild(overlay);
+        
+        header.appendChild(mTitle);
+        header.appendChild(closeBtn);
+        modal.appendChild(header);
+
+        // Calculate requirements
+        let required = 0;
+        if (typeSelect.value === 'americano' || typeSelect.value === 'swiss20' || typeSelect.value === 'liga') required = 20;
+        else if (typeSelect.value === 'liga12') required = 12;
+        else if (typeSelect.value === 'grupos') required = 16;
+
+        // Info / Count
+        const infoDiv = document.createElement('div');
+        infoDiv.style.marginBottom = '10px';
+        infoDiv.style.color = 'var(--text-muted)';
+        infoDiv.innerHTML = `Selecione <strong>${required}</strong> jogadores. A ordem será aleatória.`;
+        modal.appendChild(infoDiv);
+
+        // Player List (Scrollable)
+        const listContainer = document.createElement('div');
+        listContainer.style.overflowY = 'auto';
+        listContainer.style.flex = '1';
+        listContainer.style.border = '1px solid var(--border)';
+        listContainer.style.borderRadius = 'var(--radius)';
+        listContainer.style.padding = '10px';
+        listContainer.style.marginBottom = '15px';
+        listContainer.style.display = 'grid';
+        listContainer.style.gridTemplateColumns = 'repeat(auto-fill, minmax(140px, 1fr))';
+        listContainer.style.gap = '8px';
+
+        // Checkboxes
+        const checkboxes = [];
+        const sortedPlayers = [...state.players].sort((a, b) => a.name.localeCompare(b.name));
+        
+        sortedPlayers.forEach(p => {
+            const label = document.createElement('label');
+            label.style.display = 'flex';
+            label.style.alignItems = 'center';
+            label.style.gap = '8px';
+            label.style.cursor = 'pointer';
+            label.style.fontSize = '0.9rem';
+            
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.value = p.id;
+            
+            // Pre-select if already in playerOrder or userPairs
+            let isSelected = false;
+            if (playerOrder.includes(p.id)) isSelected = true;
+            userPairs.forEach(pair => {
+                if (pair[0] === p.id || pair[1] === p.id) isSelected = true;
+            });
+            cb.checked = isSelected;
+            
+            cb.onchange = () => updateCount();
+
+            label.appendChild(cb);
+            label.appendChild(document.createTextNode(p.name));
+            listContainer.appendChild(label);
+            checkboxes.push(cb);
+        });
+        modal.appendChild(listContainer);
+
+        // Footer Actions
+        const footer = document.createElement('div');
+        footer.style.display = 'flex';
+        footer.style.justifyContent = 'space-between';
+        footer.style.alignItems = 'center';
+
+        const countLabel = document.createElement('span');
+        countLabel.style.fontWeight = 'bold';
+        
+        const confirmBtn = document.createElement('button');
+        confirmBtn.textContent = 'Confirmar e Distribuir';
+        confirmBtn.className = 'primary';
+        confirmBtn.disabled = true;
+        confirmBtn.onclick = () => {
+            const selectedIds = checkboxes.filter(c => c.checked).map(c => parseInt(c.value));
+            distributePlayersRandomly(selectedIds);
+            document.body.removeChild(overlay);
+        };
+
+        const updateCount = () => {
+            const count = checkboxes.filter(c => c.checked).length;
+            countLabel.textContent = `${count} / ${required}`;
+            countLabel.style.color = count === required ? 'var(--accent)' : (count > required ? '#ef4444' : 'var(--text-muted)');
+            confirmBtn.disabled = count !== required;
+        };
+        
+        // Initial count update
+        updateCount();
+
+        footer.appendChild(countLabel);
+        footer.appendChild(confirmBtn);
+        modal.appendChild(footer);
+
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+    };
+
+    const distributePlayersRandomly = (ids) => {
+        // Shuffle ids
+        const shuffled = ids.sort(() => 0.5 - Math.random());
+        
+        if (typeSelect.value === 'americano' || typeSelect.value === 'swiss20') {
+            // Fill playerOrder
+            for(let i=0; i<20; i++) {
+                playerOrder[i] = shuffled[i] || null;
+            }
+        } else {
+            // Fill userPairs
+            let pairCount = 0;
+            if (typeSelect.value === 'liga') pairCount = 10;
+            else if (typeSelect.value === 'liga12') pairCount = 6;
+            else if (typeSelect.value === 'grupos') pairCount = 8;
+
+            for(let i=0; i<pairCount; i++) {
+                const p1 = shuffled[i*2];
+                const p2 = shuffled[i*2 + 1];
+                userPairs[i] = [p1 || null, p2 || null];
+            }
+        }
+        renderSelectors();
+        updateGenerateBtn();
+    };
+
     const errorMsg = document.createElement('div');
     errorMsg.style.color = '#ef4444';
     errorMsg.style.fontSize = '0.9rem';
