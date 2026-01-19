@@ -1677,6 +1677,7 @@ function renderCreateTournament(container) {
     form.appendChild(nameInput);
     form.appendChild(typeLabel);
     form.appendChild(typeSelect);
+    form.appendChild(autoSelectBtn);
     form.appendChild(selectionContainer);
     form.appendChild(errorMsg);
     form.appendChild(generateBtn);
