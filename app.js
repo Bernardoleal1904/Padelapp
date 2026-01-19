@@ -157,10 +157,10 @@ function saveState() {
             
             // Guardamos apenas os dados essenciais para partilhar
             const dataToSave = {
-                players: state.players,
-                tournaments: state.tournaments,
-                activeTournamentId: state.activeTournamentId,
-                updatedAt: state.updatedAt
+                players: state.players || [],
+                tournaments: state.tournaments || [],
+                activeTournamentId: state.activeTournamentId === undefined ? null : state.activeTournamentId,
+                updatedAt: state.updatedAt || Date.now()
             };
             
             db.ref('appState').set(dataToSave)
