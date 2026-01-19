@@ -263,18 +263,29 @@ function renderLogin(container) {
     card.className = 'card';
     card.style.maxWidth = '400px';
     card.style.margin = '0 auto';
+    card.style.padding = '2rem'; // Add padding for visibility
 
     const userLabel = document.createElement('label');
     userLabel.textContent = 'Utilizador';
+    userLabel.style.display = 'block'; // Ensure block display
+    userLabel.style.marginBottom = '0.5rem';
+    
     const userInput = document.createElement('input');
     userInput.type = 'text';
     userInput.placeholder = 'admin';
+    userInput.style.width = '100%'; // Full width
+    userInput.style.marginBottom = '1rem';
 
     const passLabel = document.createElement('label');
     passLabel.textContent = 'Password';
+    passLabel.style.display = 'block';
+    passLabel.style.marginBottom = '0.5rem';
+    
     const passInput = document.createElement('input');
     passInput.type = 'password';
     passInput.placeholder = '•••••';
+    passInput.style.width = '100%';
+    passInput.style.marginBottom = '1rem';
 
     const errorMsg = document.createElement('div');
     errorMsg.style.color = '#ef4444';
