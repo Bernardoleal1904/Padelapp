@@ -1601,7 +1601,17 @@ function renderRanking(container) {
 
     const totals = {};
     state.players.forEach(p => {
-        totals[p.id] = { id: p.id, name: p.name, points: 0, tournaments: 0, wins: p.wins, losses: p.losses, gamesPlayed: p.gamesPlayed };
+        // Reset dynamic counters - calculate everything from scratch based on finalized tournaments
+        totals[p.id] = { 
+            id: p.id, 
+            name: p.name, 
+            points: 0, 
+            tournaments: 0, 
+            wins: 0, 
+            losses: 0, 
+            draws: 0, 
+            gamesPlayed: 0 
+        };
     });
     
     state.tournaments.forEach(t => {
@@ -1617,19 +1627,21 @@ function renderRanking(container) {
         playerIds.forEach(id => {
             const player = state.players.find(p => p.id === id);
             if (player) {
-                stats[id] = { id, name: player.name, played: 0, wins: 0, losses: 0, gamesWon: 0, gamesLost: 0, diff: 0 };
+                stats[id] = { id, name: player.name, played: 0, wins: 0, losses: 0, draws: 0, gamesWon: 0, gamesLost: 0, diff: 0 };
             }
         });
         
         t.rounds.forEach(r => {
             r.matches.forEach(m => {
                 if (m.played) {
-                    const update = (ids, won, gWon, gLost) => {
+                    const update = (ids, won, gWon, gLost, isDraw) => {
                         ids.forEach(id => {
                             if (stats[id]) {
                                 stats[id].played++;
                                 if (won) stats[id].wins++;
-                                else if (gWon < gLost) stats[id].losses++;
+                                else if (isDraw) stats[id].draws++;
+                                else stats[id].losses++;
+                                
                                 stats[id].gamesWon += gWon;
                                 stats[id].gamesLost += gLost;
                                 stats[id].diff = stats[id].gamesWon - stats[id].gamesLost;
@@ -1637,14 +1649,14 @@ function renderRanking(container) {
                         });
                     };
                     if (m.score1 > m.score2) {
-                        update(m.team1, true, m.score1, m.score2);
-                        update(m.team2, false, m.score2, m.score1);
+                        update(m.team1, true, m.score1, m.score2, false);
+                        update(m.team2, false, m.score2, m.score1, false);
                     } else if (m.score2 > m.score1) {
-                        update(m.team1, false, m.score1, m.score2);
-                        update(m.team2, true, m.score2, m.score1);
+                        update(m.team1, false, m.score1, m.score2, false);
+                        update(m.team2, true, m.score2, m.score1, false);
                     } else {
-                        update(m.team1, false, m.score1, m.score2);
-                        update(m.team2, false, m.score2, m.score1);
+                        update(m.team1, false, m.score1, m.score2, true);
+                        update(m.team2, false, m.score2, m.score1, true);
                     }
                 }
             });
@@ -1661,18 +1673,20 @@ function renderRanking(container) {
         if (t.type === 'americano' && playerIds.size === 20) {
             currentPointsTable = pointsTableAmericano20;
         } else if (t.type === 'americano') {
-             // Fallback for americano with different player count if any, or use same
              currentPointsTable = pointsTableAmericano20; 
         } else if (t.type === 'liga' && playerIds.size === 12) {
              currentPointsTable = pointsTableLiga12;
         }
-        // Future: Add conditions for 'grupos' or 'liga' if they have specific tables
 
         arr.forEach((p, i) => {
             const pts = i < currentPointsTable.length ? currentPointsTable[i] : 0;
             if (totals[p.id]) {
                 totals[p.id].points += pts;
                 totals[p.id].tournaments += 1;
+                totals[p.id].wins += p.wins;
+                totals[p.id].losses += p.losses;
+                totals[p.id].draws += p.draws;
+                totals[p.id].gamesPlayed += p.played;
             }
         });
     });
@@ -1702,17 +1716,7 @@ function renderRanking(container) {
                 const highlightClass = i < 3 ? 'rank-highlight' : '';
                 const medalClass = i === 0 ? 'medal medal-gold' : i === 1 ? 'medal medal-silver' : i === 2 ? 'medal medal-bronze' : '';
                 const medalHtml = medalClass ? `<span class="${medalClass}">${i + 1}º</span>` : '';
-                // Calculate draws dynamically
-                const playerDraws = state.tournaments.reduce((acc, t) => {
-                     let draws = 0;
-                     t.rounds.forEach(r => r.matches.forEach(m => {
-                         if (m.played && m.score1 === m.score2 && (m.team1.includes(p.id) || m.team2.includes(p.id))) {
-                             draws++;
-                         }
-                     }));
-                     return acc + draws;
-                }, 0);
-
+                
                 return `
                     <tr class="${highlightClass}">
                         <td style="text-align: center; padding: 4px;">${i + 1}</td>
@@ -1720,7 +1724,7 @@ function renderRanking(container) {
                         <td style="text-align: center; font-weight:bold; padding: 4px;">${p.points}</td>
                         <td style="text-align: center; padding: 4px;">${p.tournaments}</td>
                         <td style="text-align: center; padding: 4px;">${p.wins}</td>
-                        <td style="text-align: center; padding: 4px;">${playerDraws}</td>
+                        <td style="text-align: center; padding: 4px;">${p.draws}</td>
                         <td style="text-align: center; padding: 4px;">${p.losses}</td>
                     </tr>
                 `;
