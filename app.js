@@ -387,8 +387,10 @@ function render() {
             renderPlayerProfile(main);
         } else if (state.currentView === 'ranking') {
             renderRanking(main);
+        } else if (state.currentView === 'login') {
+            renderLogin(main);
         } else {
-            // Default to dashboard for 'dashboard', 'login', or unknown
+            // Default to dashboard for 'dashboard' or unknown
             renderDashboard(main);
         }
     } catch (e) {
