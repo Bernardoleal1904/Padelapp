@@ -159,7 +159,7 @@ function saveState() {
             const dataToSave = {
                 players: state.players || [],
                 tournaments: state.tournaments || [],
-                activeTournamentId: state.activeTournamentId === undefined ? null : state.activeTournamentId,
+                activeTournamentId: (state.activeTournamentId === undefined || state.activeTournamentId === null) ? null : state.activeTournamentId,
                 updatedAt: state.updatedAt || Date.now()
             };
             
@@ -208,8 +208,7 @@ function initMockData() {
 }
 
 // Auth
-let isAdmin = true; // FORCE ADMIN FOR GITHUB PAGES
-// let isAdmin = localStorage.getItem('padelAuth') === 'true';
+let isAdmin = localStorage.getItem('padelAuth') === 'true';
 
 function login(username, password) {
     // Hardcoded credentials for simplicity
@@ -241,10 +240,17 @@ function handleAuthClick() {
 }
 
 function updateNavbar() {
-    // No auth button anymore in new index.html, so this is safe to be empty or just check
     const authBtn = document.getElementById('auth-btn');
     if (authBtn) {
-        authBtn.style.display = 'none'; // Hide if present
+        authBtn.style.display = 'block';
+        authBtn.textContent = isAdmin ? 'Sair' : 'Login';
+        if (isAdmin) {
+            authBtn.style.backgroundColor = 'var(--primary)';
+            authBtn.style.color = 'white';
+        } else {
+            authBtn.style.backgroundColor = '';
+            authBtn.style.color = '';
+        }
     }
 }
 
