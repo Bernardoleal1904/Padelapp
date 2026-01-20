@@ -1783,6 +1783,9 @@ function renderRanking(container) {
     // Specific points table for Americano 20 Players
     const pointsTableAmericano20 = [250, 220, 200, 170, 160, 150, 140, 130, 120, 110, 100, 90, 80, 70, 60, 50, 40, 30, 20, 10];
     
+    // Points table for Swiss 20 Players
+    const pointsTableSwiss20 = [250, 220, 200, 170, 160, 150, 140, 130, 120, 110, 100, 90, 80, 70, 60, 50, 40, 30, 20, 10];
+
     // Points table for Liga 12 (6 pairs)
     const pointsTableLiga12 = [200, 200, 160, 160, 130, 130, 110, 110, 90, 90, 70, 70];
 
@@ -1861,6 +1864,8 @@ function renderRanking(container) {
             currentPointsTable = pointsTableAmericano20;
         } else if (t.type === 'americano') {
              currentPointsTable = pointsTableAmericano20; 
+        } else if (t.type === 'swiss20') {
+             currentPointsTable = pointsTableSwiss20;
         } else if (t.type === 'liga' && playerIds.size === 12) {
              currentPointsTable = pointsTableLiga12;
         }
