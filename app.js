@@ -2167,63 +2167,124 @@ function createTournamentSwiss20(tournamentId, players, numCourts) {
     }
     rounds.push({ matches: r1Matches });
 
-    // R2: Random but no repeat partners
-    let r2Matches = [];
-    let attempts = 0;
-    while (attempts < 1000) {
-        const r2Players = [...players].sort(() => 0.5 - Math.random());
-        let valid = true;
-        const currentMatches = [];
-        
-        for (let c = 0; c < numCourts; c++) {
-            const i = c * 4;
-            const p1 = r2Players[i].id;
-            const p2 = r2Players[i+1].id;
-            const p3 = r2Players[i+2].id;
-            const p4 = r2Players[i+3].id;
+    // R2 & R3: Random but no repeat partners/opponents (if possible)
+    const generateRandomRound = (roundPhase) => {
+        let rMatches = [];
+        let attempts = 0;
+        const maxAttempts = 2000;
+
+        while (attempts < maxAttempts) {
+            const shuffled = [...players].sort(() => 0.5 - Math.random());
+            let valid = true;
+            const currentMatches = [];
             
-            if (pairExists(p1, p2, rounds) || pairExists(p3, p4, rounds)) {
-                valid = false;
+            for (let c = 0; c < numCourts; c++) {
+                const i = c * 4;
+                const p1 = shuffled[i].id;
+                const p2 = shuffled[i+1].id;
+                const p3 = shuffled[i+2].id;
+                const p4 = shuffled[i+3].id;
+                
+                // Check if pair exists
+                if (pairExists(p1, p2, rounds) || pairExists(p3, p4, rounds)) {
+                    valid = false;
+                    break;
+                }
+                
+                // Strict check: Avoid repeating opponents as well for first 3 rounds
+                // Check if p1/p2 have played against p3/p4 or vice versa in any configuration is complex
+                // Simplified: Check if p1 has played with p2 (already done). 
+                // We can add logic to avoid p1 vs p3 if they played before? 
+                // For now, let's stick to "no repeat partners" as primary constraint to ensure playability.
+                // "não se pode repetir campos parceiros e adversarios"
+                // No repeat court: Handled by distributeMatchesToCourts
+                // No repeat partner: pairExists
+                // No repeat opponents: Extra check
+                
+                const playedAgainst = (pa, pb) => {
+                     return rounds.some(r => r.matches.some(m => {
+                         const teamA = m.team1.includes(pa) ? m.team1 : (m.team2.includes(pa) ? m.team2 : null);
+                         const teamB = m.team1.includes(pb) ? m.team1 : (m.team2.includes(pb) ? m.team2 : null);
+                         // If they were in opposite teams in the same match
+                         if (teamA && teamB && teamA !== teamB) return true;
+                         return false;
+                     }));
+                };
+
+                if (playedAgainst(p1, p3) || playedAgainst(p1, p4) || 
+                    playedAgainst(p2, p3) || playedAgainst(p2, p4)) {
+                    valid = false;
+                    break;
+                }
+
+                currentMatches.push({
+                    courtId: c + 1,
+                    team1: [p1, p2],
+                    team2: [p3, p4],
+                    score1: 0, score2: 0, played: false, phase: roundPhase
+                });
+            }
+            
+            if (valid) {
+                rMatches = currentMatches;
                 break;
             }
-            currentMatches.push({
-                courtId: c + 1,
-                team1: [p1, p2],
-                team2: [p3, p4],
-                score1: 0, score2: 0, played: false, phase: 'swiss_r2'
-            });
+            attempts++;
         }
         
-        if (valid) {
-            r2Matches = currentMatches;
-            break;
+        if (rMatches.length === 0) {
+            // Fallback: relax opponent constraint, keep partner constraint
+            let fallbackAttempts = 0;
+            while (fallbackAttempts < 1000) {
+                 const shuffled = [...players].sort(() => 0.5 - Math.random());
+                 let valid = true;
+                 const currentMatches = [];
+                 for (let c = 0; c < numCourts; c++) {
+                    const i = c * 4;
+                    const p1 = shuffled[i].id;
+                    const p2 = shuffled[i+1].id;
+                    const p3 = shuffled[i+2].id;
+                    const p4 = shuffled[i+3].id;
+                    if (pairExists(p1, p2, rounds) || pairExists(p3, p4, rounds)) {
+                        valid = false; break;
+                    }
+                    currentMatches.push({
+                        courtId: c + 1, team1: [p1, p2], team2: [p3, p4], score1: 0, score2: 0, played: false, phase: roundPhase
+                    });
+                 }
+                 if (valid) { rMatches = currentMatches; break; }
+                 fallbackAttempts++;
+            }
         }
-        attempts++;
-    }
-    
-    if (r2Matches.length === 0) {
-        // Fallback if super unlucky, just take random
-        const r2Players = [...players].sort(() => 0.5 - Math.random());
-        for (let c = 0; c < numCourts; c++) {
-            const i = c * 4;
-            r2Matches.push({
-                courtId: c + 1,
-                team1: [r2Players[i].id, r2Players[i+1].id],
-                team2: [r2Players[i+2].id, r2Players[i+3].id],
-                score1: 0, score2: 0, played: false, phase: 'swiss_r2'
-            });
+        
+        if (rMatches.length === 0) {
+             // Ultimate fallback: Just random
+             const shuffled = [...players].sort(() => 0.5 - Math.random());
+             for (let c = 0; c < numCourts; c++) {
+                const i = c * 4;
+                rMatches.push({
+                    courtId: c + 1, 
+                    team1: [shuffled[i].id, shuffled[i+1].id], 
+                    team2: [shuffled[i+2].id, shuffled[i+3].id], 
+                    score1: 0, score2: 0, played: false, phase: roundPhase
+                });
+             }
         }
-    }
-    
-    // Optimize court assignment for R2 as well (even though R1 was random, we can try to switch it up)
-    const optimizedR2 = distributeMatchesToCourts(r2Matches, rounds, numCourts);
 
-    // Sort matches by courtId
-    optimizedR2.sort((a, b) => a.courtId - b.courtId);
+        return distributeMatchesToCourts(rMatches, rounds, numCourts);
+    };
 
-    rounds.push({ matches: optimizedR2 });
+    // R2
+    const r2Matches = generateRandomRound('swiss_r2');
+    r2Matches.sort((a, b) => a.courtId - b.courtId);
+    rounds.push({ matches: r2Matches });
 
-    return { id: tournamentId, status: 'Em Curso', rounds, type: 'swiss20', stage: 'r2' };
+    // R3 (Also random now, as requested)
+    const r3Matches = generateRandomRound('swiss_r3');
+    r3Matches.sort((a, b) => a.courtId - b.courtId);
+    rounds.push({ matches: r3Matches });
+
+    return { id: tournamentId, status: 'Em Curso', rounds, type: 'swiss20', stage: 'r3' };
 }
 
 function buildRoundRobinRounds(teams) {
@@ -2594,9 +2655,16 @@ function checkAdvanceSwissRound(tournamentId) {
     const currentRound = t.rounds[currentRoundIndex];
     if (!currentRound.matches.every(m => m.played)) return;
 
-    // If we have played R2 or more (so we are moving to R3, R4, R5...)
+    // If we have played R3 (so we are moving to R4) or R4 (moving to R5)
     // AND we haven't reached 5 rounds yet (R1..R5)
-    if (t.rounds.length >= 2 && t.rounds.length < 5) {
+    // Note: R1, R2, R3 are now pre-generated at start. 
+    // So checkAdvanceSwissRound will only be called effectively after R3 finishes to generate R4, and after R4 finishes to generate R5.
+    
+    // We need to detect if we are at the end of R3 or R4.
+    // If rounds.length is 3, we just finished R3 -> Generate R4 based on Ranking.
+    // If rounds.length is 4, we just finished R4 -> Generate R5 based on Ranking.
+    
+    if (t.rounds.length >= 3 && t.rounds.length < 5) {
         // Compute Ranking
         const stats = {};
         // Initialize
@@ -2650,6 +2718,14 @@ function checkAdvanceSwissRound(tournamentId) {
 
         // Group by 4 and create matches (1+4 vs 2+3)
         const nextMatches = [];
+        
+        // Determine if this is the last round (Round 5)
+        const isLastRound = t.rounds.length === 4;
+        
+        // Court Priority Order for Last Round: Top 4 -> Court 3, then 1, 2, 4, 5
+        const courtPriority = [3, 1, 2, 4, 5]; 
+        let groupIndex = 0;
+
         for (let i = 0; i < rankedPlayers.length; i += 4) {
             if (i + 3 < rankedPlayers.length) {
                 // 1st (i) & 4th (i+3) vs 2nd (i+1) & 3rd (i+2)
@@ -2658,22 +2734,32 @@ function checkAdvanceSwissRound(tournamentId) {
                 const p3 = rankedPlayers[i+2].id; // 3rd
                 const p4 = rankedPlayers[i+3].id; // 4th
                 
+                let assignedCourt = null;
+                if (isLastRound) {
+                     // Use priority array or fallback to sequential if out of bounds
+                     assignedCourt = groupIndex < courtPriority.length ? courtPriority[groupIndex] : (groupIndex + 1);
+                }
+
                 nextMatches.push({
-                    courtId: null, // To be assigned
+                    courtId: assignedCourt, 
                     team1: [p1, p4],
                     team2: [p2, p3],
                     score1: 0, score2: 0, played: false, phase: `swiss_r${t.rounds.length + 1}`
                 });
+                groupIndex++;
             }
         }
         
-        // Optimize court assignment to avoid repetition
-        const optimizedMatches = distributeMatchesToCourts(nextMatches, t.rounds, 5);
-        
-        // Sort matches by courtId
-        optimizedMatches.sort((a, b) => a.courtId - b.courtId);
-
-        t.rounds.push({ matches: optimizedMatches });
+        if (isLastRound) {
+             // For the last round, use the fixed court assignment
+             nextMatches.sort((a, b) => a.courtId - b.courtId);
+             t.rounds.push({ matches: nextMatches });
+        } else {
+             // For intermediate rounds (R3, R4), optimize court distribution to avoid repetition
+             const optimizedMatches = distributeMatchesToCourts(nextMatches, t.rounds, 5);
+             optimizedMatches.sort((a, b) => a.courtId - b.courtId);
+             t.rounds.push({ matches: optimizedMatches });
+        }
         saveState();
         render(); // Force refresh to show new round
     } else if (t.rounds.length === 5) {
