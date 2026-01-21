@@ -127,8 +127,9 @@ async function loadState() {
             if (!Array.isArray(state.players)) state.players = [];
             if (!Array.isArray(state.tournaments)) state.tournaments = [];
             if (!state.currentView) state.currentView = 'dashboard';
-            if (!state.seasons) state.seasons = ['Temporada 1'];
-            if (!state.activeSeason) state.activeSeason = 'Temporada 1';
+            if (!state.seasons) state.seasons = ['Temporada 1', 'Temporada 2'];
+            if (!state.seasons.includes('Temporada 2')) state.seasons.push('Temporada 2');
+            if (!state.activeSeason || state.activeSeason === 'Temporada 1') state.activeSeason = 'Temporada 2';
         }
     } catch (e) {
         console.error('Error loading local state:', e);
@@ -2631,6 +2632,25 @@ function createTournamentSwiss20(tournamentId, players, numCourts) {
         let attempts = 0;
         const maxAttempts = 2000;
 
+        // Helper to check if matches can be distributed without violating Court 4/5 rule
+        const checkCourtDistribution = (matchesToCheck) => {
+             // Deep copy matches to avoid side effects from distributeMatchesToCourts
+             const tempMatches = JSON.parse(JSON.stringify(matchesToCheck));
+             const distributed = distributeMatchesToCourts(tempMatches, rounds, numCourts);
+             
+             // Check if any match assigned to C4 or C5 contains a player who already played there
+             const hasViolation = distributed.some(m => {
+                 if (m.courtId !== 4 && m.courtId !== 5) return false;
+                 return [...m.team1, ...m.team2].some(pid => {
+                     // Check history in previous rounds
+                     return rounds.some(r => r.matches.some(oldM => 
+                         oldM.courtId === m.courtId && (oldM.team1.includes(pid) || oldM.team2.includes(pid))
+                     ));
+                 });
+             });
+             return !hasViolation;
+        };
+
         while (attempts < maxAttempts) {
             const shuffled = [...players].sort(() => 0.5 - Math.random());
             let valid = true;
@@ -2650,15 +2670,6 @@ function createTournamentSwiss20(tournamentId, players, numCourts) {
                 }
                 
                 // Strict check: Avoid repeating opponents as well for first 3 rounds
-                // Check if p1/p2 have played against p3/p4 or vice versa in any configuration is complex
-                // Simplified: Check if p1 has played with p2 (already done). 
-                // We can add logic to avoid p1 vs p3 if they played before? 
-                // For now, let's stick to "no repeat partners" as primary constraint to ensure playability.
-                // "não se pode repetir campos parceiros e adversarios"
-                // No repeat court: Handled by distributeMatchesToCourts
-                // No repeat partner: pairExists
-                // No repeat opponents: Extra check
-                
                 const playedAgainst = (pa, pb) => {
                      return rounds.some(r => r.matches.some(m => {
                          const teamA = m.team1.includes(pa) ? m.team1 : (m.team2.includes(pa) ? m.team2 : null);
@@ -2684,8 +2695,12 @@ function createTournamentSwiss20(tournamentId, players, numCourts) {
             }
             
             if (valid) {
-                rMatches = currentMatches;
-                break;
+                // Check court distribution constraint
+                if (checkCourtDistribution(currentMatches)) {
+                    rMatches = currentMatches;
+                    break;
+                }
+                // If not valid distribution, just continue loop (counts as failed attempt)
             }
             attempts++;
         }
@@ -2710,22 +2725,51 @@ function createTournamentSwiss20(tournamentId, players, numCourts) {
                         courtId: c + 1, team1: [p1, p2], team2: [p3, p4], score1: 0, score2: 0, played: false, phase: roundPhase
                     });
                  }
-                 if (valid) { rMatches = currentMatches; break; }
+                 if (valid) {
+                     if (checkCourtDistribution(currentMatches)) {
+                         rMatches = currentMatches; 
+                         break; 
+                     }
+                 }
                  fallbackAttempts++;
             }
         }
         
         if (rMatches.length === 0) {
-             // Ultimate fallback: Just random
-             const shuffled = [...players].sort(() => 0.5 - Math.random());
-             for (let c = 0; c < numCourts; c++) {
-                const i = c * 4;
-                rMatches.push({
-                    courtId: c + 1, 
-                    team1: [shuffled[i].id, shuffled[i+1].id], 
-                    team2: [shuffled[i+2].id, shuffled[i+3].id], 
-                    score1: 0, score2: 0, played: false, phase: roundPhase
-                });
+             // Ultimate fallback: Just random but try to respect court distribution if possible?
+             // At this point we are desperate, just generate random.
+             // But we can try a few times for court distribution.
+             let ultAttempts = 0;
+             while (ultAttempts < 100) {
+                 const shuffled = [...players].sort(() => 0.5 - Math.random());
+                 const currentMatches = [];
+                 for (let c = 0; c < numCourts; c++) {
+                    const i = c * 4;
+                    currentMatches.push({
+                        courtId: c + 1, 
+                        team1: [shuffled[i].id, shuffled[i+1].id], 
+                        team2: [shuffled[i+2].id, shuffled[i+3].id], 
+                        score1: 0, score2: 0, played: false, phase: roundPhase
+                    });
+                 }
+                 if (checkCourtDistribution(currentMatches)) {
+                     rMatches = currentMatches;
+                     break;
+                 }
+                 ultAttempts++;
+             }
+             // If still empty, take the last generated (or just generate one)
+             if (rMatches.length === 0) {
+                 const shuffled = [...players].sort(() => 0.5 - Math.random());
+                 for (let c = 0; c < numCourts; c++) {
+                    const i = c * 4;
+                    rMatches.push({
+                        courtId: c + 1, 
+                        team1: [shuffled[i].id, shuffled[i+1].id], 
+                        team2: [shuffled[i+2].id, shuffled[i+3].id], 
+                        score1: 0, score2: 0, played: false, phase: roundPhase
+                    });
+                 }
              }
         }
 
