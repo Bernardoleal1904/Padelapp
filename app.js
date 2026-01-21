@@ -3,7 +3,9 @@ let state = {
     players: [], // { id, name, gamesPlayed, wins, losses }
     tournaments: [], // { id, name, status, rounds: [] }
     activeTournamentId: null,
-    currentView: 'dashboard'
+    currentView: 'dashboard',
+    seasons: ['Temporada 1'],
+    activeSeason: 'Temporada 1'
 };
 
 // --- CONFIGURAÇÃO FIREBASE ---
@@ -96,6 +98,8 @@ function setupFirebaseListener() {
             state.tournaments = remoteState.tournaments || [];
             state.activeTournamentId = remoteState.activeTournamentId;
             state.updatedAt = remoteState.updatedAt;
+            state.seasons = remoteState.seasons || ['Temporada 1'];
+            state.activeSeason = remoteState.activeSeason || 'Temporada 1';
             
             // Restaurar navegação
             // state.currentView = localView; // DISABLE FOR NOW TO FORCE DASHBOARD
@@ -123,6 +127,8 @@ async function loadState() {
             if (!Array.isArray(state.players)) state.players = [];
             if (!Array.isArray(state.tournaments)) state.tournaments = [];
             if (!state.currentView) state.currentView = 'dashboard';
+            if (!state.seasons) state.seasons = ['Temporada 1'];
+            if (!state.activeSeason) state.activeSeason = 'Temporada 1';
         }
     } catch (e) {
         console.error('Error loading local state:', e);
@@ -131,7 +137,9 @@ async function loadState() {
             players: [],
             tournaments: [],
             activeTournamentId: null,
-            currentView: 'dashboard'
+            currentView: 'dashboard',
+            seasons: ['Temporada 1'],
+            activeSeason: 'Temporada 1'
         };
     }
 
@@ -160,7 +168,9 @@ function saveState() {
                 players: state.players || [],
                 tournaments: state.tournaments || [],
                 activeTournamentId: (state.activeTournamentId === undefined || state.activeTournamentId === null) ? null : state.activeTournamentId,
-                updatedAt: state.updatedAt || Date.now()
+                updatedAt: state.updatedAt || Date.now(),
+                seasons: state.seasons || ['Temporada 1'],
+                activeSeason: state.activeSeason || 'Temporada 1'
             };
             
             db.ref('appState').set(dataToSave)
@@ -251,6 +261,11 @@ function updateNavbar() {
             authBtn.style.backgroundColor = '';
             authBtn.style.color = '';
         }
+    }
+
+    const playersBtn = document.getElementById('nav-players-btn');
+    if (playersBtn) {
+        playersBtn.style.display = isAdmin ? 'block' : 'none';
     }
 }
 
@@ -574,9 +589,31 @@ function renderPlayers(container) {
     state.players.forEach(p => {
         const li = document.createElement('li');
         li.className = 'player-list-item';
-        li.innerHTML = `<span>${p.name}</span>`;
+        
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = p.name;
+        li.appendChild(nameSpan);
         
         if (isAdmin) {
+            const btnGroup = document.createElement('div');
+            btnGroup.style.display = 'flex';
+            btnGroup.style.gap = '5px';
+
+            const editBtn = document.createElement('button');
+            editBtn.textContent = '✏️';
+            editBtn.className = 'secondary';
+            editBtn.style.padding = '4px 8px';
+            editBtn.title = 'Editar nome';
+            editBtn.onclick = () => {
+                const newName = prompt('Novo nome para o jogador:', p.name);
+                if (newName && newName.trim() !== '') {
+                    p.name = newName.trim();
+                    saveState();
+                    render();
+                }
+            };
+            btnGroup.appendChild(editBtn);
+
             const delBtn = document.createElement('button');
             delBtn.textContent = 'Remover';
             delBtn.className = 'danger';
@@ -584,7 +621,9 @@ function renderPlayers(container) {
                 removePlayer(p.id);
                 render();
             };
-            li.appendChild(delBtn);
+            btnGroup.appendChild(delBtn);
+            
+            li.appendChild(btnGroup);
         }
         
         list.appendChild(li);
@@ -609,9 +648,15 @@ function renderTournamentView(container) {
     const displayName = tournament.name ? tournament.name : `Torneio #${tournament.id.slice(-4)}`;
     
     header.innerHTML = `
-        <div style="display:flex; align-items:center; gap:10px; margin-bottom: 0.5rem;">
-            <h1 style="margin:0;">${displayName}</h1>
-            ${isAdmin ? '<button id="edit-name-btn" class="secondary" style="padding: 4px 8px; font-size: 1rem; border: none; background: transparent; cursor: pointer;">✏️</button>' : ''}
+        <div style="display:flex; flex-direction:column; gap:4px; margin-bottom: 0.5rem;">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <h1 style="margin:0;">${displayName}</h1>
+                ${isAdmin ? '<button id="edit-name-btn" class="secondary" style="padding: 4px 8px; font-size: 1rem; border: none; background: transparent; cursor: pointer;">✏️</button>' : ''}
+            </div>
+            <div style="font-size:0.9rem; color:var(--text-muted); display:flex; align-items:center; gap:8px;">
+                <span>${tournament.season || 'Temporada 1'}</span>
+                ${isAdmin ? '<button id="edit-season-btn" class="secondary" style="padding: 0 4px; font-size: 0.9rem; border: none; background: transparent; cursor: pointer;">✏️</button>' : ''}
+            </div>
         </div>
         <div style="color:var(--text-muted)">${tournament.status || 'Em Curso'}</div>
     `;
@@ -625,6 +670,27 @@ function renderTournamentView(container) {
                 tournament.name = newName.trim();
                 saveState();
                 render();
+            }
+        };
+    }
+
+    const editSeasonBtn = document.getElementById('edit-season-btn');
+    if (editSeasonBtn) {
+        editSeasonBtn.onclick = () => {
+            // Create a modal or simple prompt to pick existing season
+            // Simple prompt is risky if user types wrong. Let's use a prompt but validate against existing seasons.
+            const seasons = state.seasons || ['Temporada 1'];
+            const seasonList = seasons.join(', ');
+            const newSeason = prompt(`Mover para Temporada (${seasonList}):`, tournament.season || 'Temporada 1');
+            if (newSeason && newSeason.trim()) {
+                const trimmed = newSeason.trim();
+                if (seasons.includes(trimmed)) {
+                    tournament.season = trimmed;
+                    saveState();
+                    render();
+                } else {
+                    alert(`Temporada inválida. Escolha uma de: ${seasonList}`);
+                }
             }
         };
     }
@@ -1233,7 +1299,24 @@ function renderCreateTournament(container) {
     const selectionContainer = document.createElement('div');
     selectionContainer.style.marginTop = '20px';
 
-    // --- AUTO SELECT / RANDOMIZE FEATURE ---
+    // --- SEASON SELECTION ---
+    const seasonLabel = document.createElement('label');
+    seasonLabel.textContent = 'Temporada';
+    seasonLabel.style.marginTop = '15px';
+    const seasonSelect = document.createElement('select');
+    
+    // Ensure seasons exist
+    const seasons = state.seasons || ['Temporada 1'];
+    seasons.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s;
+        opt.textContent = s;
+        seasonSelect.appendChild(opt);
+    });
+    seasonSelect.value = state.activeSeason || 'Temporada 1';
+
+    // ... existing autoSelectBtn ...
+
     const autoSelectBtn = document.createElement('button');
     autoSelectBtn.textContent = '⚡ Seleção Múltipla / Aleatória';
     autoSelectBtn.className = 'secondary';
@@ -1669,15 +1752,18 @@ function renderCreateTournament(container) {
             defaultRounds,
             typeSelect.value,
             ids,
-            (typeSelect.value.startsWith('liga') || typeSelect.value === 'grupos') ? userPairs : undefined
+            (typeSelect.value.startsWith('liga') || typeSelect.value === 'grupos') ? userPairs : undefined,
+            seasonSelect.value // Pass selected season
         );
     };
 
-    form.appendChild(nameLabel);
-    form.appendChild(nameInput);
-    form.appendChild(typeLabel);
-    form.appendChild(typeSelect);
-    form.appendChild(autoSelectBtn);
+        form.appendChild(nameLabel);
+        form.appendChild(nameInput);
+        form.appendChild(seasonLabel);
+        form.appendChild(seasonSelect);
+        form.appendChild(typeLabel);
+        form.appendChild(typeSelect);
+        form.appendChild(autoSelectBtn);
     form.appendChild(selectionContainer);
     form.appendChild(errorMsg);
     form.appendChild(generateBtn);
@@ -1772,7 +1858,7 @@ function renderGameDetail(container) {
     container.appendChild(card);
 }
 
-function calculateGlobalRanking() {
+function calculateGlobalRanking(seasonFilter) {
     // Default points table (can be used for others if needed, or fallback)
     const pointsTableDefault = [150,150,120,120,100,100,80,80,60,60,50,50,40,40,30,30,20,20,10,10];
     
@@ -1803,6 +1889,10 @@ function calculateGlobalRanking() {
     state.tournaments.forEach(t => {
         if (t.status !== 'Finalizado') return;
         
+        // Filter by season if provided
+        const tSeason = t.season || 'Temporada 1';
+        if (seasonFilter && tSeason !== seasonFilter) return;
+
         const playerIds = new Set();
         t.rounds.forEach(r => r.matches.forEach(m => {
             m.team1.forEach(id => playerIds.add(id));
@@ -1891,7 +1981,104 @@ function renderRanking(container) {
     h1.textContent = 'Ranking';
     container.appendChild(h1);
 
-    const ranking = calculateGlobalRanking();
+    // Season Selector
+    const controlsDiv = document.createElement('div');
+    controlsDiv.style.marginBottom = '20px';
+    controlsDiv.style.display = 'flex';
+    controlsDiv.style.gap = '10px';
+    controlsDiv.style.alignItems = 'center';
+
+    const seasonSelect = document.createElement('select');
+    seasonSelect.style.padding = '5px';
+    
+    // Ensure seasons exist
+    const seasons = state.seasons || ['Temporada 1'];
+    seasons.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s;
+        opt.textContent = s;
+        seasonSelect.appendChild(opt);
+    });
+
+    // Default to active season or first
+    const currentActive = state.viewParams.season || state.activeSeason || 'Temporada 1';
+    seasonSelect.value = currentActive;
+
+    seasonSelect.onchange = () => {
+        navigateTo('ranking', { season: seasonSelect.value });
+    };
+
+    controlsDiv.appendChild(document.createTextNode('Temporada: '));
+    controlsDiv.appendChild(seasonSelect);
+
+    // Admin: Add Season Button
+    if (isAdmin) {
+        const addSeasonBtn = document.createElement('button');
+        addSeasonBtn.textContent = '+';
+        addSeasonBtn.className = 'secondary';
+        addSeasonBtn.style.padding = '5px 10px';
+        addSeasonBtn.title = 'Nova Temporada';
+        addSeasonBtn.onclick = () => {
+            const newName = prompt('Nome da nova temporada (ex: Temporada 2):');
+            if (newName && newName.trim()) {
+                if (!state.seasons.includes(newName.trim())) {
+                    state.seasons.push(newName.trim());
+                    state.activeSeason = newName.trim();
+                    saveState();
+                    navigateTo('ranking', { season: newName.trim() });
+                } else {
+                    alert('Essa temporada já existe.');
+                }
+            }
+        };
+        controlsDiv.appendChild(addSeasonBtn);
+
+        const editSeasonBtn = document.createElement('button');
+        editSeasonBtn.textContent = '✏️';
+        editSeasonBtn.className = 'secondary';
+        editSeasonBtn.style.padding = '5px 10px';
+        editSeasonBtn.title = 'Editar nome da temporada';
+        editSeasonBtn.onclick = () => {
+            const oldName = seasonSelect.value;
+            const newName = prompt('Editar nome da temporada:', oldName);
+            if (newName && newName.trim() && newName.trim() !== oldName) {
+                const trimmedName = newName.trim();
+                if (state.seasons.includes(trimmedName)) {
+                    alert('Já existe uma temporada com esse nome.');
+                    return;
+                }
+                
+                // Update seasons array
+                const idx = state.seasons.indexOf(oldName);
+                if (idx !== -1) {
+                    state.seasons[idx] = trimmedName;
+                }
+                
+                // Update active season if needed
+                if (state.activeSeason === oldName) {
+                    state.activeSeason = trimmedName;
+                }
+
+                // Update tournaments
+                state.tournaments.forEach(t => {
+                    if (t.season === oldName) {
+                        t.season = trimmedName;
+                    } else if (!t.season && oldName === 'Temporada 1') {
+                        // Handle legacy
+                        t.season = trimmedName;
+                    }
+                });
+
+                saveState();
+                navigateTo('ranking', { season: trimmedName });
+            }
+        };
+        controlsDiv.appendChild(editSeasonBtn);
+    }
+
+    container.appendChild(controlsDiv);
+
+    const ranking = calculateGlobalRanking(currentActive);
 
     const table = document.createElement('table');
     table.style.fontSize = '0.85rem';
@@ -1931,6 +2118,85 @@ function renderRanking(container) {
 }
 
 // 6. Player Profile
+function getTournamentRanking(t) {
+    if (t.type === 'grupos') {
+        // For groups, ranking is complex (by group), but let's try to approximate or return null
+        // Actually, let's use the final placements if available
+        const placements = computeFinalPlacements(t);
+        if (placements.length > 0) {
+            return placements.map(p => ({ 
+                ids: p.team, 
+                pos: p.pos 
+            }));
+        }
+        return [];
+    }
+
+    const stats = {};
+    const playerIds = new Set();
+    t.rounds.forEach(r => r.matches.forEach(m => {
+        m.team1.forEach(id => playerIds.add(id));
+        m.team2.forEach(id => playerIds.add(id));
+    }));
+
+    playerIds.forEach(id => {
+        const player = state.players.find(p => p.id === id);
+        if (player) {
+            stats[id] = { 
+                id: id,
+                name: player.name, 
+                played: 0, 
+                wins: 0,
+                draws: 0, 
+                losses: 0,
+                gamesWon: 0, 
+                gamesLost: 0,
+                diff: 0 
+            };
+        }
+    });
+
+    t.rounds.forEach(r => {
+        r.matches.forEach(m => {
+            if (m.played) {
+                const update = (ids, won, gWon, gLost, isDraw) => {
+                    ids.forEach(id => {
+                        if (stats[id]) {
+                            stats[id].played++;
+                            if (won) stats[id].wins++;
+                            else if (isDraw) stats[id].draws++;
+                            else stats[id].losses++;
+                            
+                            stats[id].gamesWon += gWon;
+                            stats[id].gamesLost += gLost;
+                            stats[id].diff = stats[id].gamesWon - stats[id].gamesLost;
+                        }
+                    });
+                };
+
+                if (m.score1 > m.score2) {
+                    update(m.team1, true, m.score1, m.score2, false);
+                    update(m.team2, false, m.score2, m.score1, false);
+                } else if (m.score2 > m.score1) {
+                    update(m.team1, false, m.score1, m.score2, false);
+                    update(m.team2, true, m.score2, m.score1, false);
+                } else {
+                    update(m.team1, false, m.score1, m.score2, true);
+                    update(m.team2, false, m.score2, m.score1, true);
+                }
+            }
+        });
+    });
+
+    return Object.values(stats).sort((a, b) => {
+        const ap = (a.wins * 3) + (a.draws * 1);
+        const bp = (b.wins * 3) + (b.draws * 1);
+        if (bp !== ap) return bp - ap;
+        if (b.diff !== a.diff) return b.diff - a.diff;
+        return b.gamesWon - a.gamesWon;
+    });
+}
+
 function renderPlayerProfile(container) {
     const playerId = state.viewParams.id;
     const player = state.players.find(p => p.id === playerId);
@@ -2168,15 +2434,66 @@ function renderPlayerProfile(container) {
             };
             
             const statusColor = t.status === 'Finalizado' ? 'var(--text-muted)' : 'var(--accent-hover)';
-            
             const displayName = t.name ? t.name : `Torneio #${t.id.slice(-4)}`;
             
+            // Calculate Player Rank in Tournament
+            let rankHtml = '';
+            if (t.type === 'grupos') {
+                const tr = getTournamentRanking(t);
+                const pRank = tr.find(r => r.ids.includes(player.id));
+                if (pRank) {
+                    rankHtml = `<span style="font-weight:bold; color:var(--primary); margin-left:8px;">🏆 ${pRank.pos}º Lugar</span>`;
+                }
+            } else {
+                const tr = getTournamentRanking(t);
+                const pIdx = tr.findIndex(p => p.id === player.id);
+                if (pIdx !== -1) {
+                    const pos = pIdx + 1;
+                    const medal = pos === 1 ? '🥇' : (pos === 2 ? '🥈' : (pos === 3 ? '🥉' : `#${pos}`));
+                    rankHtml = `<span style="font-weight:bold; color:var(--primary); margin-left:8px;">${medal} Lugar</span>`;
+                }
+            }
+
+            // Calculate Form Guide (W/L/D bubbles)
+            const matches = [];
+            t.rounds.forEach((r, rIdx) => {
+                r.matches.forEach(m => {
+                    if (m.team1.includes(player.id) || m.team2.includes(player.id)) {
+                         matches.push({ ...m, roundIndex: rIdx + 1 });
+                    }
+                });
+            });
+            
+            let formGuideHtml = '<div style="display:flex; gap:4px; margin-top:4px;">';
+            matches.forEach(m => {
+                if (!m.played) {
+                    formGuideHtml += `<span style="width:10px; height:10px; border-radius:50%; background:var(--border);" title="Não jogado"></span>`;
+                    return;
+                }
+                const isTeam1 = m.team1.includes(player.id);
+                const myScore = isTeam1 ? m.score1 : m.score2;
+                const oppScore = isTeam1 ? m.score2 : m.score1;
+                
+                let color = '#eab308'; // Draw
+                if (myScore > oppScore) color = '#22c55e'; // Win
+                else if (myScore < oppScore) color = '#ef4444'; // Loss
+                
+                formGuideHtml += `<span style="width:10px; height:10px; border-radius:50%; background:${color};" title="${myScore}-${oppScore}"></span>`;
+            });
+            formGuideHtml += '</div>';
+
             li.innerHTML = `
-                <div>
-                    <div style="font-weight:600">${displayName}</div>
-                    <div style="font-size:0.875rem; color:var(--text-muted)">${t.type === 'americano' ? 'Americano' : (t.type === 'liga' ? 'Liga' : 'Grupos')}</div>
+                <div style="display:flex; justify-content:space-between; align-items:start;">
+                    <div>
+                        <div style="font-weight:600">${displayName}</div>
+                        <div style="font-size:0.875rem; color:var(--text-muted)">
+                            ${t.type === 'americano' ? 'Americano' : (t.type === 'liga' ? 'Liga' : 'Grupos')}
+                            ${rankHtml}
+                        </div>
+                        ${formGuideHtml}
+                    </div>
+                    <span style="font-size:0.75rem; background:${statusColor}; color:white; padding:2px 8px; border-radius:99px; height:fit-content;">${t.status || 'Em Curso'}</span>
                 </div>
-                <span style="font-size:0.75rem; background:${statusColor}; color:white; padding:2px 8px; border-radius:99px;">${t.status || 'Em Curso'}</span>
             `;
             tournamentList.appendChild(li);
         });
@@ -2196,7 +2513,7 @@ function removePlayer(id) {
     saveState();
 }
 
-function createTournament(name, numPlayers, numCourts, numRounds, type, selectedIds, pairs) {
+function createTournament(name, numPlayers, numCourts, numRounds, type, selectedIds, pairs, seasonName) {
     const tournamentId = Date.now().toString();
     let tournament;
     const selectedPlayers = Array.isArray(selectedIds) && selectedIds.length > 0
@@ -2221,6 +2538,7 @@ function createTournament(name, numPlayers, numCourts, numRounds, type, selected
     }
 
     tournament.name = name;
+    tournament.season = seasonName || state.activeSeason || 'Temporada 1';
     state.tournaments.push(tournament);
     saveState();
 
