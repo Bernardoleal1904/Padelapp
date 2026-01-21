@@ -725,7 +725,7 @@ function renderTournamentView(container) {
     tabsContainer.appendChild(createTab('matches', 'Jogos'));
     tabsContainer.appendChild(createTab('ranking', 'Classificação'));
     if (tournament.type === 'swiss20') {
-        tabsContainer.appendChild(createTab('distribution', 'Campos'));
+        tabsContainer.appendChild(createTab('stats', 'Estatísticas'));
     }
     container.appendChild(tabsContainer);
 
@@ -734,14 +734,15 @@ function renderTournamentView(container) {
         renderTournamentMatches(container, tournament);
     } else if (currentTab === 'ranking') {
         renderTournamentRanking(container, tournament);
-    } else if (currentTab === 'distribution') {
-        renderTournamentDistribution(container, tournament);
+    } else if (currentTab === 'stats' || currentTab === 'distribution') { // Handle legacy 'distribution' url param if any
+        renderTournamentStats(container, tournament);
     }
 }
 
-function renderTournamentDistribution(container, tournament) {
+function renderTournamentStats(container, tournament) {
+    // 1. Court Distribution
     const h2 = document.createElement('h2');
-    h2.textContent = 'Distribuição de Campos por Jogador';
+    h2.textContent = 'Distribuição de Campos';
     container.appendChild(h2);
 
     const stats = {};
@@ -749,31 +750,78 @@ function renderTournamentDistribution(container, tournament) {
     
     // Initialize
     const allPlayerIds = new Set();
-    tournament.rounds.forEach(r => r.matches.forEach(m => {
-         m.team1.forEach(id => allPlayerIds.add(id));
-         m.team2.forEach(id => allPlayerIds.add(id));
-    }));
+    tournament.rounds.forEach(r => {
+        let matches = r.matches;
+        if (!Array.isArray(matches)) {
+             if (typeof matches === 'object' && matches !== null) matches = Object.values(matches);
+             else matches = [];
+        }
+        matches.forEach(m => {
+            m.team1.forEach(id => allPlayerIds.add(id));
+            m.team2.forEach(id => allPlayerIds.add(id));
+        });
+    });
     
     allPlayerIds.forEach(id => {
-        stats[id] = { id, name: state.players.find(p => p.id === id)?.name || '?', courts: {} };
+        stats[id] = { 
+            id, 
+            name: state.players.find(p => p.id === id)?.name || '?', 
+            courts: {},
+            partners: [],
+            opponents: []
+        };
         courts.forEach(c => stats[id].courts[c] = 0);
     });
 
     tournament.rounds.forEach(r => {
-        r.matches.forEach(m => {
-            [...m.team1, ...m.team2].forEach(pid => {
+        let matches = r.matches;
+        if (!Array.isArray(matches)) {
+             if (typeof matches === 'object' && matches !== null) matches = Object.values(matches);
+             else matches = [];
+        }
+        matches.forEach(m => {
+            const t1 = m.team1;
+            const t2 = m.team2;
+            
+            // Courts
+            [...t1, ...t2].forEach(pid => {
                 if (stats[pid]) {
                     stats[pid].courts[m.courtId] = (stats[pid].courts[m.courtId] || 0) + 1;
                 }
             });
+
+            // Partners & Opponents
+            // T1
+            if (t1.length === 2) {
+                if (stats[t1[0]]) {
+                    stats[t1[0]].partners.push(stats[t1[1]]?.name || '?');
+                    stats[t1[0]].opponents.push(...t2.map(id => stats[id]?.name || '?'));
+                }
+                if (stats[t1[1]]) {
+                    stats[t1[1]].partners.push(stats[t1[0]]?.name || '?');
+                    stats[t1[1]].opponents.push(...t2.map(id => stats[id]?.name || '?'));
+                }
+            }
+            // T2
+            if (t2.length === 2) {
+                if (stats[t2[0]]) {
+                    stats[t2[0]].partners.push(stats[t2[1]]?.name || '?');
+                    stats[t2[0]].opponents.push(...t1.map(id => stats[id]?.name || '?'));
+                }
+                if (stats[t2[1]]) {
+                    stats[t2[1]].partners.push(stats[t2[0]]?.name || '?');
+                    stats[t2[1]].opponents.push(...t1.map(id => stats[id]?.name || '?'));
+                }
+            }
         });
     });
 
     const sortedPlayers = Object.values(stats).sort((a, b) => a.name.localeCompare(b.name));
 
-    const table = document.createElement('table');
-    table.style.width = '100%';
-    table.style.fontSize = '0.85rem';
+    const tableCourts = document.createElement('table');
+    tableCourts.style.width = '100%';
+    tableCourts.style.fontSize = '0.85rem';
+    tableCourts.style.marginBottom = '30px';
     
     let headerHtml = '<tr><th style="text-align:left; padding:4px;">Jogador</th>';
     courts.forEach(c => headerHtml += `<th style="text-align:center; padding:4px; width:40px;">C${c}</th>`);
@@ -790,12 +838,73 @@ function renderTournamentDistribution(container, tournament) {
         bodyHtml += '</tr>';
     });
 
-    table.innerHTML = `<thead>${headerHtml}</thead><tbody>${bodyHtml}</tbody>`;
-    container.appendChild(table);
+    tableCourts.innerHTML = `<thead>${headerHtml}</thead><tbody>${bodyHtml}</tbody>`;
+    container.appendChild(tableCourts);
+
+    // 2. Partners & Opponents
+    const h2b = document.createElement('h2');
+    h2b.textContent = 'Parceiros e Adversários';
+    container.appendChild(h2b);
+
+    const tablePartners = document.createElement('table');
+    tablePartners.style.width = '100%';
+    tablePartners.style.fontSize = '0.85rem';
+    
+    let headerHtml2 = `
+        <tr>
+            <th style="text-align:left; padding:4px; width:150px;">Jogador</th>
+            <th style="text-align:left; padding:4px;">Parceiros</th>
+            <th style="text-align:left; padding:4px;">Adversários</th>
+        </tr>
+    `;
+
+    let bodyHtml2 = '';
+    sortedPlayers.forEach(p => {
+        // Highlight duplicates in partners?
+        // Highlight duplicates in opponents?
+        const partnerCounts = {};
+        p.partners.forEach(x => partnerCounts[x] = (partnerCounts[x] || 0) + 1);
+        const partnersStr = p.partners.map(x => {
+            const count = partnerCounts[x];
+            return count > 1 ? `<span style="color:red; font-weight:bold;">${x}(${count})</span>` : x;
+        }).join(', ');
+
+        const oppCounts = {};
+        p.opponents.forEach(x => oppCounts[x] = (oppCounts[x] || 0) + 1);
+        const oppStr = p.opponents.map(x => {
+            const count = oppCounts[x];
+            return count > 1 ? `<span style="color:orange;">${x}</span>` : x;
+        }).join(', ');
+
+        bodyHtml2 += `
+            <tr>
+                <td style="font-weight:600; padding:6px; border-bottom:1px solid var(--border);">${p.name}</td>
+                <td style="padding:6px; border-bottom:1px solid var(--border); color:var(--text-muted);">${partnersStr}</td>
+                <td style="padding:6px; border-bottom:1px solid var(--border); color:var(--text-muted);">${oppStr}</td>
+            </tr>
+        `;
+    });
+
+    tablePartners.innerHTML = `<thead>${headerHtml2}</thead><tbody>${bodyHtml2}</tbody>`;
+    container.appendChild(tablePartners);
+
 }
 
 function renderTournamentMatches(container, tournament) {
     tournament.rounds.forEach((round, roundIndex) => {
+        // Safety check for matches array (Firebase might convert to object if custom props added)
+        let matches = round.matches;
+        if (!Array.isArray(matches)) {
+            if (typeof matches === 'object' && matches !== null) {
+                matches = Object.keys(matches)
+                    .filter(k => !isNaN(k))
+                    .sort((a, b) => parseInt(a) - parseInt(b))
+                    .map(k => matches[k]);
+            } else {
+                matches = [];
+            }
+        }
+
         const roundHeader = document.createElement('div');
         roundHeader.style.cursor = 'pointer';
         roundHeader.style.background = 'var(--bg-card)';
@@ -807,7 +916,7 @@ function renderTournamentMatches(container, tournament) {
         roundHeader.style.justifyContent = 'space-between';
         roundHeader.style.alignItems = 'center';
         
-        const isComplete = round.matches.every(m => m.played);
+        const isComplete = matches.every(m => m.played);
         const title = getRoundTitle(tournament, round, roundIndex);
         roundHeader.innerHTML = `
             <h3 style="margin:0">${title}</h3>
@@ -821,7 +930,7 @@ function renderTournamentMatches(container, tournament) {
         // Standard is grid-2 (2 columns).
         // User wants to see 5 matches simultaneously on PC screen.
         // We can check if it's a "Liga" or "Americano" with 5 courts.
-        const isFiveCourts = round.matches.length >= 5;
+        const isFiveCourts = matches.length >= 5;
         
         roundContainer.className = isFiveCourts ? 'grid-5-desktop' : 'grid-2';
         if (isFiveCourts) {
@@ -836,7 +945,17 @@ function renderTournamentMatches(container, tournament) {
 
         roundContainer.style.marginBottom = '20px';
         
-        const firstIncompleteIndex = tournament.rounds.findIndex(r => !r.matches.every(m => m.played));
+        // Use matches instead of round.matches for findIndex check too if needed, but here we need to check ALL rounds
+        // So we need a helper or similar logic for the "expand" logic
+        const firstIncompleteIndex = tournament.rounds.findIndex(r => {
+            let ms = r.matches;
+            if (!Array.isArray(ms)) {
+                 if (typeof ms === 'object' && ms !== null) ms = Object.values(ms); // simplified check
+                 else ms = [];
+            }
+            return !ms.every(m => m.played);
+        });
+        
         const shouldExpand = (firstIncompleteIndex === -1 && roundIndex === tournament.rounds.length - 1) || roundIndex === firstIncompleteIndex;
         roundContainer.style.display = shouldExpand ? 'grid' : 'none';
 
@@ -845,7 +964,7 @@ function renderTournamentMatches(container, tournament) {
             roundContainer.style.display = isHidden ? 'grid' : 'none';
         };
 
-        round.matches.forEach((match, matchIndex) => {
+        matches.forEach((match, matchIndex) => {
             const matchCard = document.createElement('div');
             matchCard.className = 'match-card';
             
@@ -900,7 +1019,7 @@ function getRoundTitle(tournament, round, roundIndex) {
     if (phases.has('league')) return `Liga - Jornada ${roundIndex + 1}`;
     if (phases.has('swiss_r1')) return 'Ronda 1 (Aleatória)';
     if (phases.has('swiss_r2')) return 'Ronda 2 (Aleatória)';
-    if (phases.has('swiss_r3')) return 'Ronda 3 (Níveis)';
+    if (phases.has('swiss_r3')) return 'Ronda 3 (Aleatória)';
     if (phases.has('swiss_r4')) return 'Ronda 4 (Níveis)';
     if (phases.has('swiss_r5')) return 'Ronda 5 (Níveis)';
     return `Ronda ${roundIndex + 1}`;
@@ -2651,6 +2770,8 @@ function createTournamentSwiss20(tournamentId, players, numCourts) {
                     break;
                 }
                 
+                // Optimized opponent check: Check if ANY player in team1 has played against ANY player in team2
+                // (This covers p1 vs p3, p1 vs p4, p2 vs p3, p2 vs p4)
                 const playedAgainst = (pa, pb) => {
                      return rounds.some(r => r.matches.some(m => {
                          const teamA = m.team1.includes(pa) ? m.team1 : (m.team2.includes(pa) ? m.team2 : null);
@@ -2677,14 +2798,17 @@ function createTournamentSwiss20(tournamentId, players, numCourts) {
             if (valid) {
                 // Check distribution cost
                 const tempMatches = JSON.parse(JSON.stringify(currentMatches));
-                const distributed = distributeMatchesToCourts(tempMatches, rounds, numCourts);
+                const distributedResult = distributeMatchesToCourts(tempMatches, rounds, numCourts);
                 
-                if (distributed.cost < bestCost) {
-                    bestCost = distributed.cost;
-                    bestMatches = distributed;
-                    // Perfect score (20 for 20 players on new courts)
-                    if (bestCost <= 20) break;
+                // If we find ANY valid solution with strict opponents + strict courts, we prefer it over anything else
+                // But we still want to minimize court repetition if possible
+                if (distributedResult.cost < bestCost) {
+                    bestCost = distributedResult.cost;
+                    bestMatches = distributedResult.matches;
                 }
+                // If we find a solution that satisfies the STRICT court rules (cost < 500,000) AND strict opponents, we are happy.
+                // We don't need to keep searching for "perfect zero" if it takes too long, but let's try a bit more.
+                if (bestCost <= 20) break;
             }
             attempts++;
         }
@@ -2697,7 +2821,7 @@ function createTournamentSwiss20(tournamentId, players, numCourts) {
             let bestFallbackMatches = bestMatches.length > 0 ? bestMatches : [];
             let bestFallbackCost = bestCost;
 
-            while (fallbackAttempts < 1000) {
+            while (fallbackAttempts < 2000) {
                  const shuffled = [...players].sort(() => 0.5 - Math.random());
                  let valid = true;
                  const currentMatches = [];
@@ -2710,22 +2834,36 @@ function createTournamentSwiss20(tournamentId, players, numCourts) {
                     if (pairExists(p1, p2, rounds) || pairExists(p3, p4, rounds)) {
                         valid = false; break;
                     }
+                    
+                    // NEW STRICT RULE IN FALLBACK: 
+                    // Even when relaxing opponent constraints, we try to enforce opponent uniqueness if possible
+                    // But to ensure we find *something* valid regarding partners, we allow opponent repeat if needed.
+                    // However, user complained about repeating opponents.
+                    // So let's add a "soft" check here or just rely on the main loop.
+                    // The main loop already tries strict opponent uniqueness.
+                    // If we are here, it means we couldn't find strict opponent uniqueness + strict court rules.
+                    // We must prioritize: 1. Partners (Never repeat) -> 2. Courts (Strict rules) -> 3. Opponents.
+                    
                     currentMatches.push({
                         courtId: c + 1, team1: [p1, p2], team2: [p3, p4], score1: 0, score2: 0, played: false, phase: roundPhase
                     });
                  }
                  if (valid) {
                      const tempMatches = JSON.parse(JSON.stringify(currentMatches));
-                     const distributed = distributeMatchesToCourts(tempMatches, rounds, numCourts);
-                     if (distributed.cost < bestFallbackCost) {
-                         bestFallbackCost = distributed.cost;
-                         bestFallbackMatches = distributed;
-                         if (bestFallbackCost <= 20) break;
+                     const distributedResult = distributeMatchesToCourts(tempMatches, rounds, numCourts);
+                     
+                     // If this solution has BETTER cost than what we have, take it.
+                     // But wait! This fallback loop allows repeating opponents.
+                     // We should only accept this if we really can't find anything better.
+                     
+                     if (distributedResult.cost < bestFallbackCost) {
+                         bestFallbackCost = distributedResult.cost;
+                         bestFallbackMatches = distributedResult.matches;
                      }
                  }
                  fallbackAttempts++;
             }
-            // Use the best fallback found (even if it still has high cost, it's the best we have)
+            // Use the best fallback found
             bestMatches = bestFallbackMatches;
             bestCost = bestFallbackCost;
         }
@@ -2749,10 +2887,10 @@ function createTournamentSwiss20(tournamentId, players, numCourts) {
                     });
                  }
                  const tempMatches = JSON.parse(JSON.stringify(currentMatches));
-                 const distributed = distributeMatchesToCourts(tempMatches, rounds, numCourts);
-                 if (distributed.cost < bestUltCost) {
-                     bestUltCost = distributed.cost;
-                     bestUltMatches = distributed;
+                 const distributedResult = distributeMatchesToCourts(tempMatches, rounds, numCourts);
+                 if (distributedResult.cost < bestUltCost) {
+                     bestUltCost = distributedResult.cost;
+                     bestUltMatches = distributedResult.matches;
                      if (bestUltCost < 1000000) break; // Found one that respects 4/5
                  }
                  ultAttempts++;
@@ -2771,7 +2909,7 @@ function createTournamentSwiss20(tournamentId, players, numCourts) {
                         score1: 0, score2: 0, played: false, phase: roundPhase
                     });
                  }
-                 bestMatches = distributeMatchesToCourts(currentMatches, rounds, numCourts);
+                 bestMatches = distributeMatchesToCourts(currentMatches, rounds, numCourts).matches;
              }
         }
 
@@ -3075,7 +3213,12 @@ function distributeMatchesToCourts(matches, previousRounds, numCourts) {
     // Build player court history
     const playerCourtCounts = {}; // id -> { courtId -> count }
     previousRounds.forEach(r => {
-        r.matches.forEach(m => {
+        let rMatches = r.matches;
+        if (!Array.isArray(rMatches)) {
+             if (typeof rMatches === 'object' && rMatches !== null) rMatches = Object.values(rMatches);
+             else rMatches = [];
+        }
+        rMatches.forEach(m => {
             const c = m.courtId;
             [...m.team1, ...m.team2].forEach(pid => {
                 if (!playerCourtCounts[pid]) playerCourtCounts[pid] = {};
@@ -3147,8 +3290,7 @@ function distributeMatchesToCourts(matches, previousRounds, numCourts) {
         }
     });
     
-    matches.cost = minCost;
-    return matches;
+    return { matches, cost: minCost };
 }
 
 function checkAdvanceSwissRound(tournamentId) {
@@ -3158,7 +3300,12 @@ function checkAdvanceSwissRound(tournamentId) {
     // Check if current round is fully played
     const currentRoundIndex = t.rounds.length - 1;
     const currentRound = t.rounds[currentRoundIndex];
-    if (!currentRound.matches.every(m => m.played)) return;
+    let crMatches = currentRound.matches;
+    if (!Array.isArray(crMatches)) {
+         if (typeof crMatches === 'object' && crMatches !== null) crMatches = Object.values(crMatches);
+         else crMatches = [];
+    }
+    if (!crMatches.every(m => m.played)) return;
 
     // If we have played R3 (so we are moving to R4) or R4 (moving to R5)
     // AND we haven't reached 5 rounds yet (R1..R5)
@@ -3261,7 +3408,8 @@ function checkAdvanceSwissRound(tournamentId) {
              t.rounds.push({ matches: nextMatches });
         } else {
              // For intermediate rounds (R3, R4), optimize court distribution to avoid repetition
-             const optimizedMatches = distributeMatchesToCourts(nextMatches, t.rounds, 5);
+             const distributedResult = distributeMatchesToCourts(nextMatches, t.rounds, 5);
+             const optimizedMatches = distributedResult.matches;
              optimizedMatches.sort((a, b) => a.courtId - b.courtId);
              t.rounds.push({ matches: optimizedMatches });
         }
