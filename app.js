@@ -1772,11 +1772,7 @@ function renderGameDetail(container) {
     container.appendChild(card);
 }
 
-function renderRanking(container) {
-    const h1 = document.createElement('h1');
-    h1.textContent = 'Ranking';
-    container.appendChild(h1);
-
+function calculateGlobalRanking() {
     // Default points table (can be used for others if needed, or fallback)
     const pointsTableDefault = [150,150,120,120,100,100,80,80,60,60,50,50,40,40,30,30,20,20,10,10];
     
@@ -1882,12 +1878,20 @@ function renderRanking(container) {
             }
         });
     });
-    const ranking = Object.values(totals).sort((a, b) => {
+    return Object.values(totals).sort((a, b) => {
         if (b.points !== a.points) return b.points - a.points;
         if (b.wins !== a.wins) return b.wins - a.wins;
         if (a.losses !== b.losses) return a.losses - b.losses;
         return b.gamesPlayed - a.gamesPlayed;
     });
+}
+
+function renderRanking(container) {
+    const h1 = document.createElement('h1');
+    h1.textContent = 'Ranking';
+    container.appendChild(h1);
+
+    const ranking = calculateGlobalRanking();
 
     const table = document.createElement('table');
     table.style.fontSize = '0.85rem';
@@ -1981,23 +1985,61 @@ function renderPlayerProfile(container) {
     const statsCard = document.createElement('div');
     statsCard.className = 'card';
     
-    const winRate = player.gamesPlayed > 0 ? Math.round((player.wins / player.gamesPlayed) * 100) : 0;
+    // Calculate stats dynamically from all existing tournaments (excluding deleted ones)
+    let gamesPlayed = 0;
+    let wins = 0;
+    let losses = 0;
+    let draws = 0;
+
+    // Use all tournaments in state (state.tournaments excludes deleted ones)
+    const validTournaments = state.tournaments;
+
+    validTournaments.forEach(t => {
+        t.rounds.forEach(r => {
+            r.matches.forEach(m => {
+                if (m.played) {
+                    const isTeam1 = m.team1.includes(player.id);
+                    const isTeam2 = m.team2.includes(player.id);
+                    
+                    if (isTeam1 || isTeam2) {
+                        gamesPlayed++;
+                        if (m.score1 === m.score2) {
+                            draws++;
+                        } else if (isTeam1 && m.score1 > m.score2) {
+                            wins++;
+                        } else if (isTeam2 && m.score2 > m.score1) {
+                            wins++;
+                        } else {
+                            losses++;
+                        }
+                    }
+                }
+            });
+        });
+    });
+
+    const winRate = gamesPlayed > 0 ? Math.round((wins / gamesPlayed) * 100) : 0;
     
-    // Calculate draws dynamically
-    const playerDraws = state.tournaments.reduce((acc, t) => {
-         let draws = 0;
-         t.rounds.forEach(r => r.matches.forEach(m => {
-             if (m.played && m.score1 === m.score2 && (m.team1.includes(player.id) || m.team2.includes(player.id))) {
-                 draws++;
-             }
-         }));
-         return acc + draws;
-    }, 0);
-    
+    // Get Ranking Data
+    const globalRanking = calculateGlobalRanking();
+    const playerRankIndex = globalRanking.findIndex(p => p.id === player.id);
+    const playerRankData = playerRankIndex !== -1 ? globalRanking[playerRankIndex] : null;
+    const currentPoints = playerRankData ? playerRankData.points : 0;
+    const currentRank = playerRankIndex !== -1 ? `#${playerRankIndex + 1}` : '-';
+
     statsCard.innerHTML = `
         <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:20px;">
+            <div style="text-align:center; border-bottom: 1px solid var(--border); padding-bottom: 10px;">
+                <div style="font-size:2rem; font-weight:700; color:var(--primary)">${currentRank}</div>
+                <div style="color:var(--text-muted)">Ranking Global</div>
+            </div>
+            <div style="text-align:center; border-bottom: 1px solid var(--border); padding-bottom: 10px;">
+                <div style="font-size:2rem; font-weight:700; color:var(--accent)">${currentPoints}</div>
+                <div style="color:var(--text-muted)">Pontos</div>
+            </div>
+
             <div style="text-align:center">
-                <div style="font-size:2rem; font-weight:700; color:var(--primary)">${player.gamesPlayed}</div>
+                <div style="font-size:2rem; font-weight:700; color:var(--primary)">${gamesPlayed}</div>
                 <div style="color:var(--text-muted)">Jogos</div>
             </div>
             <div style="text-align:center">
@@ -2005,15 +2047,15 @@ function renderPlayerProfile(container) {
                 <div style="color:var(--text-muted)">Vitórias</div>
             </div>
             <div style="text-align:center">
-                <div style="font-size:1.5rem; font-weight:600; color:#22c55e">${player.wins}</div>
+                <div style="font-size:1.5rem; font-weight:600; color:#22c55e">${wins}</div>
                 <div style="color:var(--text-muted)">Vitórias</div>
             </div>
             <div style="text-align:center">
-                <div style="font-size:1.5rem; font-weight:600; color:#eab308">${playerDraws}</div>
+                <div style="font-size:1.5rem; font-weight:600; color:#eab308">${draws}</div>
                 <div style="color:var(--text-muted)">Empates</div>
             </div>
             <div style="text-align:center; grid-column: span 2">
-                <div style="font-size:1.5rem; font-weight:600; color:#ef4444">${player.losses}</div>
+                <div style="font-size:1.5rem; font-weight:600; color:#ef4444">${losses}</div>
                 <div style="color:var(--text-muted)">Derrotas</div>
             </div>
         </div>
@@ -2037,7 +2079,93 @@ function renderPlayerProfile(container) {
         playerTournaments.forEach(t => {
             const li = document.createElement('li');
             li.style.cursor = 'pointer';
-            li.onclick = () => navigateTo('tournament-view', { id: t.id });
+            
+            // Toggle expansion on click
+            li.onclick = (e) => {
+                e.stopPropagation();
+                
+                // Toggle logic
+                const existingDetails = li.querySelector('.tournament-details');
+                if (existingDetails) {
+                    existingDetails.remove();
+                    return;
+                }
+
+                const details = document.createElement('div');
+                details.className = 'tournament-details';
+                details.style.marginTop = '15px';
+                details.style.padding = '10px';
+                details.style.backgroundColor = 'var(--bg-body)';
+                details.style.borderRadius = 'var(--radius)';
+                details.style.border = '1px solid var(--border)';
+                details.onclick = (ev) => ev.stopPropagation(); // Prevent bubbling
+
+                // Matches
+                const matches = [];
+                t.rounds.forEach((r, rIdx) => {
+                    r.matches.forEach(m => {
+                        if (m.team1.includes(player.id) || m.team2.includes(player.id)) {
+                             matches.push({ ...m, roundIndex: rIdx + 1 });
+                        }
+                    });
+                });
+
+                if (matches.length === 0) {
+                    details.innerHTML = '<div style="color:var(--text-muted)">Sem jogos registados.</div>';
+                } else {
+                    matches.forEach(m => {
+                        const isTeam1 = m.team1.includes(player.id);
+                        // Identify partner and opponents
+                        const partnerId = isTeam1 ? m.team1.find(id => id !== player.id) : m.team2.find(id => id !== player.id);
+                        const opponents = isTeam1 ? m.team2 : m.team1;
+                        
+                        const partnerName = partnerId ? (state.players.find(p => p.id === partnerId)?.name || '?') : '-';
+                        const opp1Name = state.players.find(p => p.id === opponents[0])?.name || '?';
+                        const opp2Name = state.players.find(p => p.id === opponents[1])?.name || '?';
+                        
+                        const myScore = isTeam1 ? m.score1 : m.score2;
+                        const oppScore = isTeam1 ? m.score2 : m.score1;
+                        
+                        let resultColor = 'var(--text-muted)';
+                        if (m.played) {
+                            if (myScore > oppScore) resultColor = '#22c55e'; // Win
+                            else if (myScore < oppScore) resultColor = '#ef4444'; // Loss
+                            else resultColor = '#eab308'; // Draw
+                        }
+
+                        const matchRow = document.createElement('div');
+                        matchRow.style.display = 'flex';
+                        matchRow.style.flexDirection = 'column';
+                        matchRow.style.marginBottom = '8px';
+                        matchRow.style.paddingBottom = '8px';
+                        matchRow.style.borderBottom = '1px dashed var(--border)';
+                        
+                        matchRow.innerHTML = `
+                            <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:4px;">
+                                <span style="font-weight:bold; color:var(--primary)">Ronda ${m.roundIndex}</span>
+                                <span style="font-weight:bold; color:${resultColor}">${m.played ? `${myScore} - ${oppScore}` : 'vs'}</span>
+                            </div>
+                            <div style="font-size:0.8rem;">
+                                <div><span style="color:var(--text-muted)">Parceiro:</span> ${partnerName}</div>
+                                <div><span style="color:var(--text-muted)">Oponentes:</span> ${opp1Name} & ${opp2Name}</div>
+                            </div>
+                        `;
+                        details.appendChild(matchRow);
+                    });
+                }
+
+                // Button to go to full tournament
+                const goToBtn = document.createElement('button');
+                goToBtn.textContent = 'Ver Classificação do Torneio';
+                goToBtn.className = 'secondary';
+                goToBtn.style.width = '100%';
+                goToBtn.style.marginTop = '10px';
+                goToBtn.style.fontSize = '0.8rem';
+                goToBtn.onclick = () => navigateTo('tournament-view', { id: t.id });
+                details.appendChild(goToBtn);
+
+                li.appendChild(details);
+            };
             
             const statusColor = t.status === 'Finalizado' ? 'var(--text-muted)' : 'var(--accent-hover)';
             
