@@ -5,7 +5,8 @@ let state = {
     activeTournamentId: null,
     currentView: 'dashboard',
     seasons: ['Temporada 1'],
-    activeSeason: 'Temporada 1'
+    activeSeason: 'Temporada 1',
+    seasonPoints: {} // { 'Temporada 1': { playerId: points, ... } }
 };
 
 // --- CONFIGURAÇÃO FIREBASE ---
@@ -100,6 +101,7 @@ function setupFirebaseListener() {
             state.updatedAt = remoteState.updatedAt;
             state.seasons = remoteState.seasons || ['Temporada 1'];
             state.activeSeason = remoteState.activeSeason || 'Temporada 1';
+            state.seasonPoints = remoteState.seasonPoints || {};
             
             // Restaurar navegação
             // state.currentView = localView; // DISABLE FOR NOW TO FORCE DASHBOARD
@@ -130,6 +132,7 @@ async function loadState() {
             if (!state.seasons) state.seasons = ['Temporada 1', 'Temporada 2'];
             if (!state.seasons.includes('Temporada 2')) state.seasons.push('Temporada 2');
             if (!state.activeSeason || state.activeSeason === 'Temporada 1') state.activeSeason = 'Temporada 2';
+            if (!state.seasonPoints) state.seasonPoints = {};
         }
     } catch (e) {
         console.error('Error loading local state:', e);
@@ -140,7 +143,8 @@ async function loadState() {
             activeTournamentId: null,
             currentView: 'dashboard',
             seasons: ['Temporada 1'],
-            activeSeason: 'Temporada 1'
+            activeSeason: 'Temporada 1',
+            seasonPoints: {}
         };
     }
 
@@ -171,7 +175,8 @@ function saveState() {
                 activeTournamentId: (state.activeTournamentId === undefined || state.activeTournamentId === null) ? null : state.activeTournamentId,
                 updatedAt: state.updatedAt || Date.now(),
                 seasons: state.seasons || ['Temporada 1'],
-                activeSeason: state.activeSeason || 'Temporada 1'
+                activeSeason: state.activeSeason || 'Temporada 1',
+                seasonPoints: state.seasonPoints || {}
             };
             
             db.ref('appState').set(dataToSave)
@@ -1982,13 +1987,16 @@ function calculateGlobalRanking(seasonFilter) {
     // Default points table (can be used for others if needed, or fallback)
     const pointsTableDefault = [150,150,120,120,100,100,80,80,60,60,50,50,40,40,30,30,20,20,10,10];
     
-    // Specific points table for Americano 20 Players
+    // Points Tables - Season 1 (Legacy)
+    const pointsTableSeason1 = [100, 100, 80, 80, 60, 60, 50, 50, 40, 40, 30, 30, 20, 20, 10, 10]; // Example lower points for Season 1
+
+    // Specific points table for Americano 20 Players (Season 2+)
     const pointsTableAmericano20 = [250, 220, 200, 170, 160, 150, 140, 130, 120, 110, 100, 90, 80, 70, 60, 50, 40, 30, 20, 10];
     
-    // Points table for Swiss 20 Players
+    // Points table for Swiss 20 Players (Season 2+)
     const pointsTableSwiss20 = [250, 220, 200, 170, 160, 150, 140, 130, 120, 110, 100, 90, 80, 70, 60, 50, 40, 30, 20, 10];
 
-    // Points table for Liga 12 (6 pairs)
+    // Points table for Liga 12 (6 pairs) (Season 2+)
     const pointsTableLiga12 = [200, 200, 160, 160, 130, 130, 110, 110, 90, 90, 70, 70];
 
     const totals = {};
@@ -2064,16 +2072,23 @@ function calculateGlobalRanking(seasonFilter) {
             return b.gamesWon - a.gamesWon;
         });
         
-        // Determine which points table to use
+        // Determine which points table to use based on Season
         let currentPointsTable = pointsTableDefault;
-        if (t.type === 'americano' && playerIds.size === 20) {
-            currentPointsTable = pointsTableAmericano20;
-        } else if (t.type === 'americano') {
-             currentPointsTable = pointsTableAmericano20; 
-        } else if (t.type === 'swiss20') {
-             currentPointsTable = pointsTableSwiss20;
-        } else if (t.type === 'liga' && playerIds.size === 12) {
-             currentPointsTable = pointsTableLiga12;
+        
+        // Use Season 1 table if the tournament belongs to Season 1
+        if (t.season === 'Temporada 1') {
+            currentPointsTable = pointsTableSeason1;
+        } else {
+            // Season 2+ Logic
+            if (t.type === 'americano' && playerIds.size === 20) {
+                currentPointsTable = pointsTableAmericano20;
+            } else if (t.type === 'americano') {
+                 currentPointsTable = pointsTableAmericano20; 
+            } else if (t.type === 'swiss20') {
+                 currentPointsTable = pointsTableSwiss20;
+            } else if (t.type === 'liga' && playerIds.size === 12) {
+                 currentPointsTable = pointsTableLiga12;
+            }
         }
 
         arr.forEach((p, i) => {
@@ -2088,6 +2103,28 @@ function calculateGlobalRanking(seasonFilter) {
             }
         });
     });
+    // Add Manual Points to Totals
+    if (state.seasonPoints && state.seasonPoints[seasonFilter]) {
+        const manualPoints = state.seasonPoints[seasonFilter];
+        Object.keys(manualPoints).forEach(playerIdStr => {
+            const pid = parseInt(playerIdStr);
+            const pts = manualPoints[pid];
+            
+            // Ensure player exists in totals even if no tournament played
+            if (!totals[pid]) {
+                const player = state.players.find(p => p.id === pid);
+                if (player) {
+                    totals[pid] = { id: pid, name: player.name, points: 0, tournaments: 0, wins: 0, losses: 0, draws: 0, gamesPlayed: 0 };
+                }
+            }
+            
+            if (totals[pid]) {
+                totals[pid].points += pts;
+                // We don't increment tournament count or games for manual points, usually
+            }
+        });
+    }
+
     return Object.values(totals).sort((a, b) => {
         if (b.points !== a.points) return b.points - a.points;
         if (b.wins !== a.wins) return b.wins - a.wins;
@@ -2191,6 +2228,12 @@ function renderRanking(container) {
                     state.activeSeason = trimmedName;
                 }
 
+                // Update season points
+                if (state.seasonPoints && state.seasonPoints[oldName]) {
+                    state.seasonPoints[trimmedName] = state.seasonPoints[oldName];
+                    delete state.seasonPoints[oldName];
+                }
+
                 // Update tournaments
                 state.tournaments.forEach(t => {
                     if (t.season === oldName) {
@@ -2206,6 +2249,37 @@ function renderRanking(container) {
             }
         };
         controlsDiv.appendChild(editSeasonBtn);
+
+        // Edit Points Button
+        const editPointsBtn = document.createElement('button');
+        editPointsBtn.textContent = '📊';
+        editPointsBtn.className = 'secondary';
+        editPointsBtn.style.padding = '5px 10px';
+        editPointsBtn.title = 'Editar Pontos Manuais da Temporada';
+        editPointsBtn.onclick = () => {
+            const currentSeason = seasonSelect.value;
+            // Simple prompt loop for now or a modal?
+            // Let's use a simple prompt loop for player ID and Points
+            const playerId = prompt('ID do Jogador para ajustar pontos (ver na lista de jogadores):');
+            if (playerId) {
+                const pid = parseInt(playerId);
+                const player = state.players.find(p => p.id === pid);
+                if (player) {
+                    const currentPoints = (state.seasonPoints && state.seasonPoints[currentSeason] && state.seasonPoints[currentSeason][pid]) || 0;
+                    const newPoints = prompt(`Pontos para ${player.name} na ${currentSeason}:`, currentPoints);
+                    if (newPoints !== null) {
+                        if (!state.seasonPoints) state.seasonPoints = {};
+                        if (!state.seasonPoints[currentSeason]) state.seasonPoints[currentSeason] = {};
+                        state.seasonPoints[currentSeason][pid] = parseInt(newPoints);
+                        saveState();
+                        navigateTo('ranking', { season: currentSeason });
+                    }
+                } else {
+                    alert('Jogador não encontrado.');
+                }
+            }
+        };
+        controlsDiv.appendChild(editPointsBtn);
     }
 
     container.appendChild(controlsDiv);
