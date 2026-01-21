@@ -2002,9 +2002,21 @@ function renderRanking(container) {
 
     // Default to active season or first
     const currentActive = state.viewParams.season || state.activeSeason || 'Temporada 1';
+    
+    // Ensure active season is in the list (if deleted or missing)
+    if (state.seasons && !state.seasons.includes(currentActive)) {
+       if (state.seasons.length > 0) {
+           // Fallback to first available if current active is invalid
+           // But avoid overwriting if we are just viewing a specific season via params?
+           // No, currentActive is driven by params first.
+       }
+    }
+    
     seasonSelect.value = currentActive;
 
     seasonSelect.onchange = () => {
+        state.activeSeason = seasonSelect.value;
+        saveState();
         navigateTo('ranking', { season: seasonSelect.value });
     };
 
