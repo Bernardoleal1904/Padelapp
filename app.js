@@ -2628,29 +2628,12 @@ function createTournamentSwiss20(tournamentId, players, numCourts) {
 
     // R2 & R3: Random but no repeat partners/opponents (if possible)
     const generateRandomRound = (roundPhase) => {
-        let rMatches = [];
+        let bestMatches = [];
+        let bestCost = Infinity;
         let attempts = 0;
-        const maxAttempts = 2000;
+        const maxAttempts = 2500;
 
-        // Helper to check if matches can be distributed without violating Court 4/5 rule
-        const checkCourtDistribution = (matchesToCheck) => {
-             // Deep copy matches to avoid side effects from distributeMatchesToCourts
-             const tempMatches = JSON.parse(JSON.stringify(matchesToCheck));
-             const distributed = distributeMatchesToCourts(tempMatches, rounds, numCourts);
-             
-             // Check if any match assigned to C4 or C5 contains a player who already played there
-             const hasViolation = distributed.some(m => {
-                 if (m.courtId !== 4 && m.courtId !== 5) return false;
-                 return [...m.team1, ...m.team2].some(pid => {
-                     // Check history in previous rounds
-                     return rounds.some(r => r.matches.some(oldM => 
-                         oldM.courtId === m.courtId && (oldM.team1.includes(pid) || oldM.team2.includes(pid))
-                     ));
-                 });
-             });
-             return !hasViolation;
-        };
-
+        // Try to find matches with strict constraints (no partner/opponent repeat) AND good court distribution
         while (attempts < maxAttempts) {
             const shuffled = [...players].sort(() => 0.5 - Math.random());
             let valid = true;
@@ -2663,18 +2646,15 @@ function createTournamentSwiss20(tournamentId, players, numCourts) {
                 const p3 = shuffled[i+2].id;
                 const p4 = shuffled[i+3].id;
                 
-                // Check if pair exists
                 if (pairExists(p1, p2, rounds) || pairExists(p3, p4, rounds)) {
                     valid = false;
                     break;
                 }
                 
-                // Strict check: Avoid repeating opponents as well for first 3 rounds
                 const playedAgainst = (pa, pb) => {
                      return rounds.some(r => r.matches.some(m => {
                          const teamA = m.team1.includes(pa) ? m.team1 : (m.team2.includes(pa) ? m.team2 : null);
                          const teamB = m.team1.includes(pb) ? m.team1 : (m.team2.includes(pb) ? m.team2 : null);
-                         // If they were in opposite teams in the same match
                          if (teamA && teamB && teamA !== teamB) return true;
                          return false;
                      }));
@@ -2695,19 +2675,28 @@ function createTournamentSwiss20(tournamentId, players, numCourts) {
             }
             
             if (valid) {
-                // Check court distribution constraint
-                if (checkCourtDistribution(currentMatches)) {
-                    rMatches = currentMatches;
-                    break;
+                // Check distribution cost
+                const tempMatches = JSON.parse(JSON.stringify(currentMatches));
+                const distributed = distributeMatchesToCourts(tempMatches, rounds, numCourts);
+                
+                if (distributed.cost < bestCost) {
+                    bestCost = distributed.cost;
+                    bestMatches = distributed;
+                    // Perfect score (20 for 20 players on new courts)
+                    if (bestCost <= 20) break;
                 }
-                // If not valid distribution, just continue loop (counts as failed attempt)
             }
             attempts++;
         }
         
-        if (rMatches.length === 0) {
-            // Fallback: relax opponent constraint, keep partner constraint
+        // If we failed to find a valid set or the set violates the critical 4/5 rule (cost >= 1M)
+        // Try fallback: relax opponent constraint
+        if (bestMatches.length === 0 || bestCost >= 1000000) {
             let fallbackAttempts = 0;
+            // Keep the best fallback found
+            let bestFallbackMatches = bestMatches.length > 0 ? bestMatches : [];
+            let bestFallbackCost = bestCost;
+
             while (fallbackAttempts < 1000) {
                  const shuffled = [...players].sort(() => 0.5 - Math.random());
                  let valid = true;
@@ -2726,20 +2715,27 @@ function createTournamentSwiss20(tournamentId, players, numCourts) {
                     });
                  }
                  if (valid) {
-                     if (checkCourtDistribution(currentMatches)) {
-                         rMatches = currentMatches; 
-                         break; 
+                     const tempMatches = JSON.parse(JSON.stringify(currentMatches));
+                     const distributed = distributeMatchesToCourts(tempMatches, rounds, numCourts);
+                     if (distributed.cost < bestFallbackCost) {
+                         bestFallbackCost = distributed.cost;
+                         bestFallbackMatches = distributed;
+                         if (bestFallbackCost <= 20) break;
                      }
                  }
                  fallbackAttempts++;
             }
+            // Use the best fallback found (even if it still has high cost, it's the best we have)
+            bestMatches = bestFallbackMatches;
+            bestCost = bestFallbackCost;
         }
         
-        if (rMatches.length === 0) {
-             // Ultimate fallback: Just random but try to respect court distribution if possible?
-             // At this point we are desperate, just generate random.
-             // But we can try a few times for court distribution.
+        // Ultimate fallback: Just random
+        if (bestMatches.length === 0 || bestCost >= 1000000) {
              let ultAttempts = 0;
+             let bestUltMatches = bestMatches.length > 0 ? bestMatches : [];
+             let bestUltCost = bestCost;
+
              while (ultAttempts < 100) {
                  const shuffled = [...players].sort(() => 0.5 - Math.random());
                  const currentMatches = [];
@@ -2752,28 +2748,34 @@ function createTournamentSwiss20(tournamentId, players, numCourts) {
                         score1: 0, score2: 0, played: false, phase: roundPhase
                     });
                  }
-                 if (checkCourtDistribution(currentMatches)) {
-                     rMatches = currentMatches;
-                     break;
+                 const tempMatches = JSON.parse(JSON.stringify(currentMatches));
+                 const distributed = distributeMatchesToCourts(tempMatches, rounds, numCourts);
+                 if (distributed.cost < bestUltCost) {
+                     bestUltCost = distributed.cost;
+                     bestUltMatches = distributed;
+                     if (bestUltCost < 1000000) break; // Found one that respects 4/5
                  }
                  ultAttempts++;
              }
-             // If still empty, take the last generated (or just generate one)
-             if (rMatches.length === 0) {
+             bestMatches = bestUltMatches;
+             // If bestMatches is still empty, create one simple random set
+             if (bestMatches.length === 0) {
                  const shuffled = [...players].sort(() => 0.5 - Math.random());
+                 const currentMatches = [];
                  for (let c = 0; c < numCourts; c++) {
                     const i = c * 4;
-                    rMatches.push({
+                    currentMatches.push({
                         courtId: c + 1, 
                         team1: [shuffled[i].id, shuffled[i+1].id], 
                         team2: [shuffled[i+2].id, shuffled[i+3].id], 
                         score1: 0, score2: 0, played: false, phase: roundPhase
                     });
                  }
+                 bestMatches = distributeMatchesToCourts(currentMatches, rounds, numCourts);
              }
         }
 
-        return distributeMatchesToCourts(rMatches, rounds, numCourts);
+        return bestMatches;
     };
 
     // R2
@@ -3145,6 +3147,7 @@ function distributeMatchesToCourts(matches, previousRounds, numCourts) {
         }
     });
     
+    matches.cost = minCost;
     return matches;
 }
 
