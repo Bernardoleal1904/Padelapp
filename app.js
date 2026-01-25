@@ -729,7 +729,7 @@ function renderTournamentView(container) {
 
     tabsContainer.appendChild(createTab('matches', 'Jogos'));
     tabsContainer.appendChild(createTab('ranking', 'Classificação'));
-    if (tournament.type === 'swiss20') {
+    if (tournament.type === 'swiss20' || tournament.type === 'swiss16') {
         tabsContainer.appendChild(createTab('stats', 'Estatísticas'));
     }
     container.appendChild(tabsContainer);
@@ -3442,7 +3442,7 @@ function saveMatchResult(tournamentId, roundIndex, matchIndex, s1, s2) {
     }
     if (tournament.type === 'grupos') {
         checkAdvanceStage(tournamentId);
-    } else if (tournament.type === 'swiss20') {
+    } else if (tournament.type === 'swiss20' || tournament.type === 'swiss16') {
         checkAdvanceSwissRound(tournamentId);
     }
     
