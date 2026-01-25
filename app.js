@@ -3699,7 +3699,7 @@ function checkAdvanceSwissRound(tournamentId) {
         }
         
         // Group by 4 and create matches (1+4 vs 2+3) without court assignment yet
-        const nextMatches = [];
+        // const nextMatches = []; // Removed duplicate declaration
 
         for (let i = 0; i < rankedPlayers.length; i += 4) {
             if (i + 3 < rankedPlayers.length) {
