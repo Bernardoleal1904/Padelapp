@@ -3517,8 +3517,17 @@ function checkAdvanceStage(tournamentId) {
     }
 }
 
-function distributeMatchesToCourts(matches, previousRounds, numCourts) {
-    const courts = Array.from({length: numCourts}, (_, i) => i + 1);
+function distributeMatchesToCourts(matches, previousRounds, courtsInput) {
+    // courtsInput can be a number (total courts 1..N) or an array of specific court IDs
+    let courts = [];
+    if (typeof courtsInput === 'number') {
+        courts = Array.from({length: courtsInput}, (_, i) => i + 1);
+    } else if (Array.isArray(courtsInput)) {
+        courts = courtsInput;
+    } else {
+        // Fallback default
+        courts = [1, 2, 3, 4];
+    }
     
     // Build player court history
     const playerCourtCounts = {}; // id -> { courtId -> count }
@@ -3684,16 +3693,13 @@ function checkAdvanceSwissRound(tournamentId) {
         // Determine if this is the last round (Round 5)
         const isLastRound = t.rounds.length === 4;
         
-        // Determine courts and priority based on type
         let numCourts = 5;
-        let courtPriority = [3, 1, 2, 4, 5]; // Default Swiss20
-        
         if (t.type === 'swiss16') {
             numCourts = 4;
-            courtPriority = [1, 2, 3, 4]; // Default Swiss16 priority
         }
         
-        let groupIndex = 0;
+        // Group by 4 and create matches (1+4 vs 2+3) without court assignment yet
+        const nextMatches = [];
 
         for (let i = 0; i < rankedPlayers.length; i += 4) {
             if (i + 3 < rankedPlayers.length) {
@@ -3703,28 +3709,53 @@ function checkAdvanceSwissRound(tournamentId) {
                 const p3 = rankedPlayers[i+2].id; // 3rd
                 const p4 = rankedPlayers[i+3].id; // 4th
                 
-                let assignedCourt = null;
-                if (isLastRound) {
-                     // Use priority array or fallback to sequential if out of bounds
-                     assignedCourt = groupIndex < courtPriority.length ? courtPriority[groupIndex] : (groupIndex + 1);
-                }
-
                 nextMatches.push({
-                    courtId: assignedCourt, 
+                    courtId: 0, // Placeholder
                     team1: [p1, p4],
                     team2: [p2, p3],
                     score1: 0, score2: 0, played: false, phase: `swiss_r${t.rounds.length + 1}`
                 });
-                groupIndex++;
             }
         }
         
         if (isLastRound) {
-             // For the last round, use the fixed court assignment
-             nextMatches.sort((a, b) => a.courtId - b.courtId);
-             t.rounds.push({ matches: nextMatches });
+             // For the last round:
+             // 1. Top match (1st-4th place) goes to Court 3
+             // 2. Rest of matches distributed to other courts to optimize history (avoid Court 4 overuse)
+             
+             if (nextMatches.length > 0) {
+                 // Assign Top Match
+                 nextMatches[0].courtId = 3;
+                 
+                 // Distribute the rest
+                 const otherMatches = nextMatches.slice(1);
+                 
+                 // Define available courts (excluding 3)
+                 let available = [];
+                 if (t.type === 'swiss16') {
+                     // Total courts: 1, 2, 3, 4. Excluding 3 -> 1, 2, 4
+                     available = [1, 2, 4];
+                 } else {
+                     // Swiss20: Total 1, 2, 3, 4, 5. Excluding 3 -> 1, 2, 4, 5
+                     available = [1, 2, 4, 5];
+                 }
+                 
+                 // If we have matches to distribute
+                 if (otherMatches.length > 0) {
+                     const distResult = distributeMatchesToCourts(otherMatches, t.rounds, available);
+                     // Merge back: Top match + Distributed matches
+                     // Note: distResult.matches modifies the objects in place usually, but let's be safe
+                     // We need to put them back into the main array or construct new one
+                     const finalMatches = [nextMatches[0], ...distResult.matches];
+                     finalMatches.sort((a, b) => a.courtId - b.courtId);
+                     t.rounds.push({ matches: finalMatches });
+                 } else {
+                     // Only 1 match? Unlikely for 16/20 players, but safety check
+                     t.rounds.push({ matches: nextMatches });
+                 }
+             }
         } else {
-             // For intermediate rounds (R3, R4), optimize court distribution to avoid repetition
+             // For intermediate rounds (R3, R4), optimize court distribution for ALL matches
              const distributedResult = distributeMatchesToCourts(nextMatches, t.rounds, numCourts);
              const optimizedMatches = distributedResult.matches;
              optimizedMatches.sort((a, b) => a.courtId - b.courtId);
