@@ -1420,6 +1420,10 @@ function renderCreateTournament(container) {
     typeSelect.appendChild(optGrupos);
     typeSelect.appendChild(optLiga);
     typeSelect.appendChild(optLiga12);
+    const optLiga12Random = document.createElement('option');
+    optLiga12Random.value = 'liga12random';
+    optLiga12Random.textContent = '12 Jogadores (Duplas Aleatórias)';
+    typeSelect.appendChild(optLiga12Random);
     typeSelect.appendChild(optSwiss20);
     typeSelect.appendChild(optSwiss16);
     typeSelect.value = '';
@@ -1513,7 +1517,7 @@ function renderCreateTournament(container) {
         // Calculate requirements
         let required = 0;
         if (typeSelect.value === 'americano' || typeSelect.value === 'swiss20' || typeSelect.value === 'liga') required = 20;
-        else if (typeSelect.value === 'liga12') required = 12;
+        else if (typeSelect.value === 'liga12' || typeSelect.value === 'liga12random') required = 12;
         else if (typeSelect.value === 'grupos' || typeSelect.value === 'swiss16') required = 16;
 
         // Info / Count
@@ -1617,6 +1621,11 @@ function renderCreateTournament(container) {
         } else if (typeSelect.value === 'swiss16') {
              // Fill playerOrder 16
              for(let i=0; i<16; i++) {
+                playerOrder[i] = shuffled[i] || null;
+            }
+        } else if (typeSelect.value === 'liga12random') {
+             // Fill playerOrder 12
+             for(let i=0; i<12; i++) {
                 playerOrder[i] = shuffled[i] || null;
             }
         } else {
@@ -1754,7 +1763,7 @@ function renderCreateTournament(container) {
             return false;
         }
         
-        const required = typeSelect.value === 'liga' || typeSelect.value === 'americano' || typeSelect.value === 'swiss20' ? 20 : (typeSelect.value === 'liga12' ? 12 : 16);
+        const required = typeSelect.value === 'liga' || typeSelect.value === 'americano' || typeSelect.value === 'swiss20' ? 20 : (typeSelect.value === 'liga12' || typeSelect.value === 'liga12random' ? 12 : 16);
         const currentCount = Array.from(selectedIds.keys()).length;
         
         if (currentCount !== required) {
@@ -1772,13 +1781,15 @@ function renderCreateTournament(container) {
         
         if (!typeSelect.value) return;
 
-        if (typeSelect.value === 'americano' || typeSelect.value === 'swiss20' || typeSelect.value === 'swiss16') {
+        if (typeSelect.value === 'americano' || typeSelect.value === 'swiss20' || typeSelect.value === 'swiss16' || typeSelect.value === 'liga12random') {
             const grid = document.createElement('div');
             grid.style.display = 'grid';
             grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(250px, 1fr))';
             grid.style.gap = '15px';
 
-            const count = typeSelect.value === 'swiss16' ? 16 : 20;
+            let count = 20;
+            if (typeSelect.value === 'swiss16') count = 16;
+            if (typeSelect.value === 'liga12random') count = 12;
 
             for (let i = 0; i < count; i++) {
                 const wrapper = document.createElement('div');
@@ -1868,8 +1879,11 @@ function renderCreateTournament(container) {
 
     generateBtn.onclick = () => {
         let ids;
-        if (typeSelect.value === 'americano' || typeSelect.value === 'swiss20' || typeSelect.value === 'swiss16') {
-            ids = playerOrder.slice(0, typeSelect.value === 'swiss16' ? 16 : 20);
+        if (typeSelect.value === 'americano' || typeSelect.value === 'swiss20' || typeSelect.value === 'swiss16' || typeSelect.value === 'liga12random') {
+            let count = 20;
+            if (typeSelect.value === 'swiss16') count = 16;
+            if (typeSelect.value === 'liga12random') count = 12;
+            ids = playerOrder.slice(0, count);
         } else {
             // For groups/liga, ids are derived from pairs
             ids = userPairs.flat();
@@ -1877,7 +1891,7 @@ function renderCreateTournament(container) {
         
         let defaultCourts = 4;
         if (typeSelect.value === 'liga' || typeSelect.value === 'americano' || typeSelect.value === 'swiss20') defaultCourts = 5;
-        if (typeSelect.value === 'liga12') defaultCourts = 3;
+        if (typeSelect.value === 'liga12' || typeSelect.value === 'liga12random') defaultCourts = 3;
         // swiss16 uses defaultCourts = 4 (which is set initially)
 
         const defaultRounds = 5;
@@ -2105,6 +2119,8 @@ function calculateGlobalRanking(seasonFilter) {
                  currentPointsTable = pointsTableSwiss16;
             } else if (t.type === 'liga' && playerIds.size === 12) {
                  currentPointsTable = pointsTableLiga12;
+            } else if (t.type === 'liga12random') {
+                 currentPointsTable = pointsTableSwiss20;
             }
         }
 
@@ -2783,6 +2799,8 @@ function createTournament(name, numPlayers, numCourts, numRounds, type, selected
         const validPairs = Array.isArray(pairs) && pairs.length === 6 ? pairs : undefined;
         tournament = validPairs ? createTournamentLiga12(tournamentId, validPairs, numCourts)
                                 : createTournamentLiga12(tournamentId, selectedPlayers.map((p, i, arr) => (i % 2 === 0 && i + 1 < arr.length) ? [arr[i].id, arr[i+1].id] : null).filter(Boolean), numCourts);
+    } else if (type === 'liga12random' && selectedPlayers.length === 12) {
+        tournament = createTournamentLiga12Random(tournamentId, selectedPlayers, numCourts);
     } else if (type === 'swiss20' && selectedPlayers.length === 20) {
         tournament = createTournamentSwiss20(tournamentId, selectedPlayers, numCourts);
     } else if (type === 'swiss16' && selectedPlayers.length === 16) {
@@ -2838,6 +2856,104 @@ function createTournamentLiga12(tournamentId, pairs, numCourts) {
     const teams = pairs.map(p => [p[0], p[1]]);
     const rounds = buildLiga12ProvidedRounds(teams);
     return { id: tournamentId, status: 'Em Curso', rounds, type: 'liga', teams };
+}
+
+function createTournamentLiga12Random(tournamentId, players, numCourts) {
+    const rounds = [];
+    
+    const pairExists = (p1, p2, historyRounds) => {
+        return historyRounds.some(r => r.matches.some(m => {
+            const t1 = m.team1;
+            const t2 = m.team2;
+            const check = (team) => (team.includes(p1) && team.includes(p2));
+            return check(t1) || check(t2);
+        }));
+    };
+
+    // R1: Random
+    const r1Players = [...players].sort(() => 0.5 - Math.random());
+    const r1Matches = [];
+    for (let c = 0; c < numCourts; c++) {
+        const i = c * 4;
+        r1Matches.push({
+            courtId: c + 1,
+            team1: [r1Players[i].id, r1Players[i+1].id],
+            team2: [r1Players[i+2].id, r1Players[i+3].id],
+            score1: 0, score2: 0, played: false, phase: 'liga_r1'
+        });
+    }
+    rounds.push({ matches: r1Matches });
+
+    const generateRandomRound = (roundPhase) => {
+        let bestMatches = [];
+        let bestCost = Infinity;
+        let attempts = 0;
+        const maxAttempts = 10000;
+
+        while (attempts < maxAttempts) {
+            const shuffled = [...players].sort(() => 0.5 - Math.random());
+            let valid = true;
+            const currentMatches = [];
+            
+            for (let c = 0; c < numCourts; c++) {
+                const i = c * 4;
+                const p1 = shuffled[i].id;
+                const p2 = shuffled[i+1].id;
+                const p3 = shuffled[i+2].id;
+                const p4 = shuffled[i+3].id;
+                
+                if (pairExists(p1, p2, rounds) || pairExists(p3, p4, rounds)) {
+                    valid = false;
+                    break;
+                }
+                
+                currentMatches.push({
+                    courtId: c + 1,
+                    team1: [p1, p2],
+                    team2: [p3, p4],
+                    score1: 0, score2: 0, played: false, phase: roundPhase
+                });
+            }
+            
+            if (valid) {
+                const tempMatches = JSON.parse(JSON.stringify(currentMatches));
+                const distributedResult = distributeMatchesToCourts(tempMatches, rounds, numCourts);
+                
+                if (distributedResult.cost < bestCost) {
+                    bestCost = distributedResult.cost;
+                    bestMatches = distributedResult.matches;
+                }
+                if (bestCost <= 20) break;
+            }
+            attempts++;
+        }
+        
+        if (bestMatches.length === 0) {
+             const shuffled = [...players].sort(() => 0.5 - Math.random());
+             const currentMatches = [];
+             for (let c = 0; c < numCourts; c++) {
+                const i = c * 4;
+                currentMatches.push({
+                    courtId: c + 1, 
+                    team1: [shuffled[i].id, shuffled[i+1].id], 
+                    team2: [shuffled[i+2].id, shuffled[i+3].id], 
+                    score1: 0, score2: 0, played: false, phase: roundPhase
+                });
+             }
+             bestMatches = distributeMatchesToCourts(currentMatches, rounds, numCourts).matches;
+        }
+
+        return bestMatches;
+    };
+
+    // R2-R5
+    for (let r = 2; r <= 5; r++) {
+        const matches = generateRandomRound(`liga_r${r}`);
+        matches.sort((a, b) => a.courtId - b.courtId);
+        rounds.push({ matches });
+    }
+
+    return { id: tournamentId, status: 'Em Curso', rounds, type: 'liga12random', teams: null };
 }
 
 function createTournamentSwiss20(tournamentId, players, numCourts) {
