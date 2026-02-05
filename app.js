@@ -729,7 +729,7 @@ function renderTournamentView(container) {
 
     tabsContainer.appendChild(createTab('matches', 'Jogos'));
     tabsContainer.appendChild(createTab('ranking', 'Classificação'));
-    if (tournament.type === 'swiss20' || tournament.type === 'swiss16') {
+    if (tournament.type === 'swiss20' || tournament.type === 'swiss16' || tournament.type === 'liga12random') {
         tabsContainer.appendChild(createTab('stats', 'Estatísticas'));
     }
     container.appendChild(tabsContainer);
@@ -751,7 +751,10 @@ function renderTournamentStats(container, tournament) {
     container.appendChild(h2);
 
     const stats = {};
-    const courts = [1, 2, 3, 4, 5];
+    let courts = [1, 2, 3, 4, 5];
+    if (tournament.type === 'liga12random') {
+        courts = [1, 2, 3];
+    }
     
     // Initialize
     const allPlayerIds = new Set();
@@ -2870,6 +2873,15 @@ function createTournamentLiga12Random(tournamentId, players, numCourts) {
         }));
     };
 
+    const playedAgainst = (pa, pb, historyRounds) => {
+        return historyRounds.some(r => r.matches.some(m => {
+            const teamA = m.team1.includes(pa) ? m.team1 : (m.team2.includes(pa) ? m.team2 : null);
+            const teamB = m.team1.includes(pb) ? m.team1 : (m.team2.includes(pb) ? m.team2 : null);
+            if (teamA && teamB && teamA !== teamB) return true;
+            return false;
+        }));
+    };
+
     // R1: Random
     const r1Players = [...players].sort(() => 0.5 - Math.random());
     const r1Matches = [];
@@ -2886,13 +2898,13 @@ function createTournamentLiga12Random(tournamentId, players, numCourts) {
 
     const generateRandomRound = (roundPhase) => {
         let bestMatches = [];
-        let bestCost = Infinity;
+        let bestScore = Infinity; // Score = (OpponentRepeats * 100000) + CourtCost
         let attempts = 0;
-        const maxAttempts = 10000;
+        const maxAttempts = 15000;
 
         while (attempts < maxAttempts) {
             const shuffled = [...players].sort(() => 0.5 - Math.random());
-            let valid = true;
+            let validPartners = true;
             const currentMatches = [];
             
             for (let c = 0; c < numCourts; c++) {
@@ -2903,7 +2915,7 @@ function createTournamentLiga12Random(tournamentId, players, numCourts) {
                 const p4 = shuffled[i+3].id;
                 
                 if (pairExists(p1, p2, rounds) || pairExists(p3, p4, rounds)) {
-                    valid = false;
+                    validPartners = false;
                     break;
                 }
                 
@@ -2915,15 +2927,33 @@ function createTournamentLiga12Random(tournamentId, players, numCourts) {
                 });
             }
             
-            if (valid) {
+            if (validPartners) {
+                // Calculate Opponent Repeats (Soft Constraint)
+                let opponentRepeats = 0;
+                for (const m of currentMatches) {
+                    const t1 = m.team1;
+                    const t2 = m.team2;
+                    // Check interactions: t1[0] vs t2, t1[1] vs t2
+                    if (playedAgainst(t1[0], t2[0], rounds)) opponentRepeats++;
+                    if (playedAgainst(t1[0], t2[1], rounds)) opponentRepeats++;
+                    if (playedAgainst(t1[1], t2[0], rounds)) opponentRepeats++;
+                    if (playedAgainst(t1[1], t2[1], rounds)) opponentRepeats++;
+                }
+
                 const tempMatches = JSON.parse(JSON.stringify(currentMatches));
                 const distributedResult = distributeMatchesToCourts(tempMatches, rounds, numCourts);
+                const courtCost = distributedResult.cost;
+
+                // Prioritize minimizing opponent repeats heavily
+                const totalScore = (opponentRepeats * 100000) + courtCost;
                 
-                if (distributedResult.cost < bestCost) {
-                    bestCost = distributedResult.cost;
+                if (totalScore < bestScore) {
+                    bestScore = totalScore;
                     bestMatches = distributedResult.matches;
                 }
-                if (bestCost <= 20) break;
+
+                // Stop if we find a perfect solution
+                if (opponentRepeats === 0 && courtCost <= 20) break;
             }
             attempts++;
         }
