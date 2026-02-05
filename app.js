@@ -2953,7 +2953,15 @@ function createTournamentLiga12Random(tournamentId, players, numCourts) {
                 }
 
                 // Stop if we find a perfect solution
-                if (opponentRepeats === 0 && courtCost <= 20) break;
+                // Dynamic target cost based on round:
+                // R2, R3: Should be 0 (everyone on new courts)
+                // R4, R5: Minimum 120 (everyone must repeat 2nd time)
+                const rNum = parseInt(roundPhase.split('_r')[1]) || 0;
+                let targetCost = 20;
+                if (rNum === 2 || rNum === 3) targetCost = 0;
+                if (rNum >= 4) targetCost = 120;
+
+                if (opponentRepeats === 0 && courtCost <= targetCost) break;
             }
             attempts++;
         }
