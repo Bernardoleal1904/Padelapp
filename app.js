@@ -728,10 +728,10 @@ function renderTournamentView(container) {
     };
 
     tabsContainer.appendChild(createTab('matches', 'Jogos'));
-    tabsContainer.appendChild(createTab('ranking', 'Classificação'));
-    if (tournament.type === 'swiss20' || tournament.type === 'swiss16' || tournament.type === 'liga12random') {
-        tabsContainer.appendChild(createTab('stats', 'Estatísticas'));
-    }
+     tabsContainer.appendChild(createTab('ranking', 'Classificação'));
+     if (tournament.type === 'swiss20' || tournament.type === 'swiss16' || tournament.type === 'liga12random' || tournament.type === 'swiss12random') {
+         tabsContainer.appendChild(createTab('stats', 'Estatísticas'));
+     }
     container.appendChild(tabsContainer);
 
     // Content
@@ -752,7 +752,7 @@ function renderTournamentStats(container, tournament) {
 
     const stats = {};
     let courts = [1, 2, 3, 4, 5];
-    if (tournament.type === 'liga12random') {
+    if (tournament.type === 'liga12random' || tournament.type === 'swiss12random') {
         courts = [1, 2, 3];
     }
     
@@ -1426,7 +1426,11 @@ function renderCreateTournament(container) {
     const optLiga12Random = document.createElement('option');
     optLiga12Random.value = 'liga12random';
     optLiga12Random.textContent = '12 Jogadores (Duplas Aleatórias)';
+    const optSwiss12Random = document.createElement('option');
+    optSwiss12Random.value = 'swiss12random';
+    optSwiss12Random.textContent = 'Swiss 12 Jogadores - 6 Jogos';
     typeSelect.appendChild(optLiga12Random);
+    typeSelect.appendChild(optSwiss12Random);
     typeSelect.appendChild(optSwiss20);
     typeSelect.appendChild(optSwiss16);
     typeSelect.value = '';
@@ -1520,7 +1524,7 @@ function renderCreateTournament(container) {
         // Calculate requirements
         let required = 0;
         if (typeSelect.value === 'americano' || typeSelect.value === 'swiss20' || typeSelect.value === 'liga') required = 20;
-        else if (typeSelect.value === 'liga12' || typeSelect.value === 'liga12random') required = 12;
+        else if (typeSelect.value === 'liga12' || typeSelect.value === 'liga12random' || typeSelect.value === 'swiss12random') required = 12;
         else if (typeSelect.value === 'grupos' || typeSelect.value === 'swiss16') required = 16;
 
         // Info / Count
@@ -1626,7 +1630,7 @@ function renderCreateTournament(container) {
              for(let i=0; i<16; i++) {
                 playerOrder[i] = shuffled[i] || null;
             }
-        } else if (typeSelect.value === 'liga12random') {
+        } else if (typeSelect.value === 'liga12random' || typeSelect.value === 'swiss12random') {
              // Fill playerOrder 12
              for(let i=0; i<12; i++) {
                 playerOrder[i] = shuffled[i] || null;
@@ -1766,7 +1770,7 @@ function renderCreateTournament(container) {
             return false;
         }
         
-        const required = typeSelect.value === 'liga' || typeSelect.value === 'americano' || typeSelect.value === 'swiss20' ? 20 : (typeSelect.value === 'liga12' || typeSelect.value === 'liga12random' ? 12 : 16);
+        const required = typeSelect.value === 'liga' || typeSelect.value === 'americano' || typeSelect.value === 'swiss20' ? 20 : (typeSelect.value === 'liga12' || typeSelect.value === 'liga12random' || typeSelect.value === 'swiss12random' ? 12 : 16);
         const currentCount = Array.from(selectedIds.keys()).length;
         
         if (currentCount !== required) {
@@ -1784,7 +1788,7 @@ function renderCreateTournament(container) {
         
         if (!typeSelect.value) return;
 
-        if (typeSelect.value === 'americano' || typeSelect.value === 'swiss20' || typeSelect.value === 'swiss16' || typeSelect.value === 'liga12random') {
+        if (typeSelect.value === 'americano' || typeSelect.value === 'swiss20' || typeSelect.value === 'swiss16' || typeSelect.value === 'liga12random' || typeSelect.value === 'swiss12random') {
             const grid = document.createElement('div');
             grid.style.display = 'grid';
             grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(250px, 1fr))';
@@ -1792,7 +1796,7 @@ function renderCreateTournament(container) {
 
             let count = 20;
             if (typeSelect.value === 'swiss16') count = 16;
-            if (typeSelect.value === 'liga12random') count = 12;
+            if (typeSelect.value === 'liga12random' || typeSelect.value === 'swiss12random') count = 12;
 
             for (let i = 0; i < count; i++) {
                 const wrapper = document.createElement('div');
@@ -1882,10 +1886,10 @@ function renderCreateTournament(container) {
 
     generateBtn.onclick = () => {
         let ids;
-        if (typeSelect.value === 'americano' || typeSelect.value === 'swiss20' || typeSelect.value === 'swiss16' || typeSelect.value === 'liga12random') {
+        if (typeSelect.value === 'americano' || typeSelect.value === 'swiss20' || typeSelect.value === 'swiss16' || typeSelect.value === 'liga12random' || typeSelect.value === 'swiss12random') {
             let count = 20;
             if (typeSelect.value === 'swiss16') count = 16;
-            if (typeSelect.value === 'liga12random') count = 12;
+            if (typeSelect.value === 'liga12random' || typeSelect.value === 'swiss12random') count = 12;
             ids = playerOrder.slice(0, count);
         } else {
             // For groups/liga, ids are derived from pairs
@@ -1894,10 +1898,11 @@ function renderCreateTournament(container) {
         
         let defaultCourts = 4;
         if (typeSelect.value === 'liga' || typeSelect.value === 'americano' || typeSelect.value === 'swiss20') defaultCourts = 5;
-        if (typeSelect.value === 'liga12' || typeSelect.value === 'liga12random') defaultCourts = 3;
+        if (typeSelect.value === 'liga12' || typeSelect.value === 'liga12random' || typeSelect.value === 'swiss12random') defaultCourts = 3;
         // swiss16 uses defaultCourts = 4 (which is set initially)
 
-        const defaultRounds = 5;
+        let defaultRounds = 5;
+        if (typeSelect.value === 'swiss12random') defaultRounds = 6;
         
         createTournament(
             nameInput.value.trim(),
@@ -2122,7 +2127,7 @@ function calculateGlobalRanking(seasonFilter) {
                  currentPointsTable = pointsTableSwiss16;
             } else if (t.type === 'liga' && playerIds.size === 12) {
                  currentPointsTable = pointsTableLiga12;
-            } else if (t.type === 'liga12random') {
+            } else if (t.type === 'liga12random' || t.type === 'swiss12random') {
                  currentPointsTable = pointsTableSwiss20;
             }
         }
@@ -2804,6 +2809,8 @@ function createTournament(name, numPlayers, numCourts, numRounds, type, selected
                                 : createTournamentLiga12(tournamentId, selectedPlayers.map((p, i, arr) => (i % 2 === 0 && i + 1 < arr.length) ? [arr[i].id, arr[i+1].id] : null).filter(Boolean), numCourts);
     } else if (type === 'liga12random' && selectedPlayers.length === 12) {
         tournament = createTournamentLiga12Random(tournamentId, selectedPlayers, numCourts);
+    } else if (type === 'swiss12random' && selectedPlayers.length === 12) {
+        tournament = createTournamentSwiss12Random(tournamentId, selectedPlayers, numCourts);
     } else if (type === 'swiss20' && selectedPlayers.length === 20) {
         tournament = createTournamentSwiss20(tournamentId, selectedPlayers, numCourts);
     } else if (type === 'swiss16' && selectedPlayers.length === 16) {
@@ -2873,13 +2880,16 @@ function createTournamentLiga12Random(tournamentId, players, numCourts) {
         }));
     };
 
-    const playedAgainst = (pa, pb, historyRounds) => {
-        return historyRounds.some(r => r.matches.some(m => {
-            const teamA = m.team1.includes(pa) ? m.team1 : (m.team2.includes(pa) ? m.team2 : null);
-            const teamB = m.team1.includes(pb) ? m.team1 : (m.team2.includes(pb) ? m.team2 : null);
-            if (teamA && teamB && teamA !== teamB) return true;
-            return false;
-        }));
+    const playedAgainstCount = (pa, pb, historyRounds) => {
+        let count = 0;
+        historyRounds.forEach(r => {
+            r.matches.forEach(m => {
+                const teamA = m.team1.includes(pa) ? m.team1 : (m.team2.includes(pa) ? m.team2 : null);
+                const teamB = m.team1.includes(pb) ? m.team1 : (m.team2.includes(pb) ? m.team2 : null);
+                if (teamA && teamB && teamA !== teamB) count++;
+            });
+        });
+        return count;
     };
 
     // R1: Random
@@ -2898,9 +2908,33 @@ function createTournamentLiga12Random(tournamentId, players, numCourts) {
 
     const generateRandomRound = (roundPhase) => {
         let bestMatches = [];
-        let bestScore = Infinity; // Score = (OpponentRepeats * 100000) + CourtCost
+        let bestScore = Infinity; 
         let attempts = 0;
-        const maxAttempts = 15000;
+        const maxAttempts = 200000; 
+
+        // Pre-calculate history for O(1) lookup
+        const partnerHistory = {}; 
+        const opponentHistory = {}; 
+        const courtHistory = {}; // id -> { courtId -> count }
+        
+        rounds.forEach(r => {
+            r.matches.forEach(m => {
+                const p1 = m.team1[0], p2 = m.team1[1], p3 = m.team2[0], p4 = m.team2[1];
+                [ [p1,p2], [p3,p4] ].forEach(([a,b]) => {
+                    const key = a < b ? `${a}-${b}` : `${b}-${a}`;
+                    partnerHistory[key] = (partnerHistory[key] || 0) + 1;
+                });
+                [ [p1,p3], [p1,p4], [p2,p3], [p2,p4] ].forEach(([a,b]) => {
+                    const key = a < b ? `${a}-${b}` : `${b}-${a}`;
+                    opponentHistory[key] = (opponentHistory[key] || 0) + 1;
+                });
+                const c = m.courtId;
+                [p1, p2, p3, p4].forEach(pid => {
+                    if (!courtHistory[pid]) courtHistory[pid] = {};
+                    courtHistory[pid][c] = (courtHistory[pid][c] || 0) + 1;
+                });
+            });
+        });
 
         while (attempts < maxAttempts) {
             const shuffled = [...players].sort(() => 0.5 - Math.random());
@@ -2909,59 +2943,51 @@ function createTournamentLiga12Random(tournamentId, players, numCourts) {
             
             for (let c = 0; c < numCourts; c++) {
                 const i = c * 4;
-                const p1 = shuffled[i].id;
-                const p2 = shuffled[i+1].id;
-                const p3 = shuffled[i+2].id;
-                const p4 = shuffled[i+3].id;
+                const p1 = shuffled[i].id, p2 = shuffled[i+1].id, p3 = shuffled[i+2].id, p4 = shuffled[i+3].id;
                 
-                if (pairExists(p1, p2, rounds) || pairExists(p3, p4, rounds)) {
+                const k1 = p1 < p2 ? `${p1}-${p2}` : `${p2}-${p1}`;
+                const k2 = p3 < p4 ? `${p3}-${p4}` : `${p4}-${p3}`;
+                
+                if (partnerHistory[k1] || partnerHistory[k2]) {
                     validPartners = false;
                     break;
                 }
                 
-                currentMatches.push({
-                    courtId: c + 1,
-                    team1: [p1, p2],
-                    team2: [p3, p4],
-                    score1: 0, score2: 0, played: false, phase: roundPhase
-                });
+                currentMatches.push({ courtId: c + 1, team1: [p1, p2], team2: [p3, p4], score1: 0, score2: 0, played: false, phase: roundPhase });
             }
             
             if (validPartners) {
-                // Calculate Opponent Repeats (Soft Constraint)
-                let opponentRepeats = 0;
+                let opponentScore = 0;
                 for (const m of currentMatches) {
-                    const t1 = m.team1;
-                    const t2 = m.team2;
-                    // Check interactions: t1[0] vs t2, t1[1] vs t2
-                    if (playedAgainst(t1[0], t2[0], rounds)) opponentRepeats++;
-                    if (playedAgainst(t1[0], t2[1], rounds)) opponentRepeats++;
-                    if (playedAgainst(t1[1], t2[0], rounds)) opponentRepeats++;
-                    if (playedAgainst(t1[1], t2[1], rounds)) opponentRepeats++;
+                    const t1 = m.team1, t2 = m.team2;
+                    [t1[0], t1[1]].forEach(pa => {
+                        [t2[0], t2[1]].forEach(pb => {
+                            const key = pa < pb ? `${pa}-${pb}` : `${pb}-${pa}`;
+                            const prev = opponentHistory[key] || 0;
+                            if (prev > 0) {
+                                opponentScore += Math.pow(1000, prev) * 100;
+                            }
+                        });
+                    });
                 }
 
                 const tempMatches = JSON.parse(JSON.stringify(currentMatches));
-                const distributedResult = distributeMatchesToCourts(tempMatches, rounds, numCourts);
+                const distributedResult = distributeMatchesToCourts(tempMatches, courtHistory, numCourts);
                 const courtCost = distributedResult.cost;
 
-                // Prioritize minimizing opponent repeats heavily
-                const totalScore = (opponentRepeats * 100000) + courtCost;
+                const totalScore = (opponentScore * 1000) + courtCost;
                 
                 if (totalScore < bestScore) {
                     bestScore = totalScore;
                     bestMatches = distributedResult.matches;
                 }
 
-                // Stop if we find a perfect solution
-                // Dynamic target cost based on round:
-                // R2, R3: Should be 0 (everyone on new courts)
-                // R4, R5: Minimum 120 (everyone must repeat 2nd time)
                 const rNum = parseInt(roundPhase.split('_r')[1]) || 0;
                 let targetCost = 20;
                 if (rNum === 2 || rNum === 3) targetCost = 0;
                 if (rNum >= 4) targetCost = 120;
 
-                if (opponentRepeats === 0 && courtCost <= targetCost) break;
+                if (opponentScore === 0 && courtCost <= targetCost) break;
             }
             attempts++;
         }
@@ -2992,6 +3018,184 @@ function createTournamentLiga12Random(tournamentId, players, numCourts) {
     }
 
     return { id: tournamentId, status: 'Em Curso', rounds, type: 'liga12random', teams: null };
+}
+
+function createTournamentSwiss12Random(tournamentId, players, numCourts) {
+    const rounds = [];
+    
+    const pairExists = (p1, p2, historyRounds) => {
+        return historyRounds.some(r => r.matches.some(m => {
+            const t1 = m.team1;
+            const t2 = m.team2;
+            const check = (team) => (team.includes(p1) && team.includes(p2));
+            return check(t1) || check(t2);
+        }));
+    };
+
+    const playedAgainstCount = (pa, pb, historyRounds) => {
+        let count = 0;
+        historyRounds.forEach(r => {
+            r.matches.forEach(m => {
+                const teamA = m.team1.includes(pa) ? m.team1 : (m.team2.includes(pa) ? m.team2 : null);
+                const teamB = m.team1.includes(pb) ? m.team1 : (m.team2.includes(pb) ? m.team2 : null);
+                if (teamA && teamB && teamA !== teamB) count++;
+            });
+        });
+        return count;
+    };
+
+    // R1: Random
+    const r1Players = [...players].sort(() => 0.5 - Math.random());
+    const r1Matches = [];
+    for (let c = 0; c < numCourts; c++) {
+        const i = c * 4;
+        r1Matches.push({
+            courtId: c + 1,
+            team1: [r1Players[i].id, r1Players[i+1].id],
+            team2: [r1Players[i+2].id, r1Players[i+3].id],
+            score1: 0, score2: 0, played: false, phase: 'swiss12_r1'
+        });
+    }
+    rounds.push({ matches: r1Matches });
+
+    const generateRandomRound = (roundPhase) => {
+        let bestMatches = [];
+        let bestScore = Infinity; 
+        let attempts = 0;
+        const maxAttempts = 200000; 
+
+        // Pre-calculate history for O(1) lookup
+        const partnerHistory = {}; 
+        const opponentHistory = {}; 
+        const interactionHistory = {}; // Any encounter (partner or opponent)
+        const courtHistory = {}; // id -> { courtId -> count }
+        
+        rounds.forEach(r => {
+            r.matches.forEach(m => {
+                const p1 = m.team1[0], p2 = m.team1[1], p3 = m.team2[0], p4 = m.team2[1];
+                // Partners
+                [ [p1,p2], [p3,p4] ].forEach(([a,b]) => {
+                    const key = a < b ? `${a}-${b}` : `${b}-${a}`;
+                    partnerHistory[key] = (partnerHistory[key] || 0) + 1;
+                    interactionHistory[key] = (interactionHistory[key] || 0) + 1;
+                });
+                // Opponents
+                [ [p1,p3], [p1,p4], [p2,p3], [p2,p4] ].forEach(([a,b]) => {
+                    const key = a < b ? `${a}-${b}` : `${b}-${a}`;
+                    opponentHistory[key] = (opponentHistory[key] || 0) + 1;
+                    interactionHistory[key] = (interactionHistory[key] || 0) + 1;
+                });
+                const c = m.courtId;
+                [p1, p2, p3, p4].forEach(pid => {
+                    if (!courtHistory[pid]) courtHistory[pid] = {};
+                    courtHistory[pid][c] = (courtHistory[pid][c] || 0) + 1;
+                });
+            });
+        });
+
+        while (attempts < maxAttempts) {
+            const shuffled = [...players].sort(() => 0.5 - Math.random());
+            let validPartners = true;
+            const currentMatches = [];
+            
+            for (let c = 0; c < numCourts; c++) {
+                const i = c * 4;
+                const p1 = shuffled[i].id, p2 = shuffled[i+1].id, p3 = shuffled[i+2].id, p4 = shuffled[i+3].id;
+                
+                const k1 = p1 < p2 ? `${p1}-${p2}` : `${p2}-${p1}`;
+                const k2 = p3 < p4 ? `${p3}-${p4}` : `${p4}-${p3}`;
+                
+                if (partnerHistory[k1] || partnerHistory[k2]) {
+                    validPartners = false;
+                    break;
+                }
+                
+                currentMatches.push({ courtId: c + 1, team1: [p1, p2], team2: [p3, p4], score1: 0, score2: 0, played: false, phase: roundPhase });
+            }
+            
+            if (validPartners) {
+                let opponentScore = 0;
+                let socialScore = 0; // Extra penalty for re-interacting with someone you already met
+                
+                for (const m of currentMatches) {
+                    const t1 = m.team1, t2 = m.team2;
+                    
+                    // Check interaction between current partners (p1, p2) as former opponents
+                    [ [t1[0], t1[1]], [t2[0], t2[1]] ].forEach(([pa, pb]) => {
+                        const key = pa < pb ? `${pa}-${pb}` : `${pb}-${pa}`;
+                        if (interactionHistory[key]) socialScore += 50000; // Prefer partners who haven't met even as opponents
+                    });
+
+                    // Opponent interactions
+                    [t1[0], t1[1]].forEach(pa => {
+                        [t2[0], t2[1]].forEach(pb => {
+                            const key = pa < pb ? `${pa}-${pb}` : `${pb}-${pa}`;
+                            const prevOpp = opponentHistory[key] || 0;
+                            const prevInt = interactionHistory[key] || 0;
+                            
+                            if (prevOpp > 0) {
+                                opponentScore += Math.pow(1000, prevOpp) * 100;
+                            }
+                            // If they already met (even as partners), add social penalty
+                            if (prevInt > 0) {
+                                socialScore += 20000;
+                            }
+                        });
+                    });
+                }
+
+                const tempMatches = JSON.parse(JSON.stringify(currentMatches));
+                const distributedResult = distributeMatchesToCourts(tempMatches, courtHistory, numCourts);
+                const courtCost = distributedResult.cost;
+
+                const totalScore = (opponentScore * 1000) + socialScore + courtCost;
+                
+                if (totalScore < bestScore) {
+                    bestScore = totalScore;
+                    bestMatches = distributedResult.matches;
+                }
+
+                const rNum = parseInt(roundPhase.split('_r')[1]) || 0;
+                let targetCost = 20;
+                let maxOpponentScore = 0;
+                let maxSocialScore = 150000; // Allow some social repeats (impossible to avoid all after R3/R4)
+                
+                if (rNum === 2 || rNum === 3) { targetCost = 0; maxSocialScore = 0; }
+                if (rNum >= 4) targetCost = 120;
+                
+                if (rNum === 6) maxOpponentScore = 1200000;
+
+                if (opponentScore <= maxOpponentScore && socialScore <= maxSocialScore && courtCost <= targetCost) break;
+            }
+            attempts++;
+        }
+        
+        if (bestMatches.length === 0) {
+             const shuffled = [...players].sort(() => 0.5 - Math.random());
+             const currentMatches = [];
+             for (let c = 0; c < numCourts; c++) {
+                const i = c * 4;
+                currentMatches.push({
+                    courtId: c + 1, 
+                    team1: [shuffled[i].id, shuffled[i+1].id], 
+                    team2: [shuffled[i+2].id, shuffled[i+3].id], 
+                    score1: 0, score2: 0, played: false, phase: roundPhase
+                });
+             }
+             bestMatches = distributeMatchesToCourts(currentMatches, rounds, numCourts).matches;
+        }
+
+        return bestMatches;
+    };
+
+    // R2-R6
+    for (let r = 2; r <= 6; r++) {
+        const matches = generateRandomRound(`swiss12_r${r}`);
+        matches.sort((a, b) => a.courtId - b.courtId);
+        rounds.push({ matches });
+    }
+
+    return { id: tournamentId, status: 'Em Curso', rounds, type: 'swiss12random', teams: null };
 }
 
 function createTournamentSwiss20(tournamentId, players, numCourts) {
@@ -3671,7 +3875,7 @@ function checkAdvanceStage(tournamentId) {
     }
 }
 
-function distributeMatchesToCourts(matches, previousRounds, courtsInput) {
+function distributeMatchesToCourts(matches, previousRoundsOrHistory, courtsInput) {
     // courtsInput can be a number (total courts 1..N) or an array of specific court IDs
     let courts = [];
     if (typeof courtsInput === 'number') {
@@ -3684,21 +3888,27 @@ function distributeMatchesToCourts(matches, previousRounds, courtsInput) {
     }
     
     // Build player court history
-    const playerCourtCounts = {}; // id -> { courtId -> count }
-    previousRounds.forEach(r => {
-        let rMatches = r.matches;
-        if (!Array.isArray(rMatches)) {
-             if (typeof rMatches === 'object' && rMatches !== null) rMatches = Object.values(rMatches);
-             else rMatches = [];
-        }
-        rMatches.forEach(m => {
-            const c = m.courtId;
-            [...m.team1, ...m.team2].forEach(pid => {
-                if (!playerCourtCounts[pid]) playerCourtCounts[pid] = {};
-                playerCourtCounts[pid][c] = (playerCourtCounts[pid][c] || 0) + 1;
+    let playerCourtCounts = {}; // id -> { courtId -> count }
+    
+    if (Array.isArray(previousRoundsOrHistory)) {
+        previousRoundsOrHistory.forEach(r => {
+            let rMatches = r.matches;
+            if (!Array.isArray(rMatches)) {
+                 if (typeof rMatches === 'object' && rMatches !== null) rMatches = Object.values(rMatches);
+                 else rMatches = [];
+            }
+            rMatches.forEach(m => {
+                const c = m.courtId;
+                [...m.team1, ...m.team2].forEach(pid => {
+                    if (!playerCourtCounts[pid]) playerCourtCounts[pid] = {};
+                    playerCourtCounts[pid][c] = (playerCourtCounts[pid][c] || 0) + 1;
+                });
             });
         });
-    });
+    } else {
+        // Assume it's already a pre-calculated history object
+        playerCourtCounts = previousRoundsOrHistory || {};
+    }
 
     const getCost = (match, courtId) => {
         let cost = 0;
